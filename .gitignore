@@ -1,0 +1,13 @@
+# Folders
+.vscode/
+__pycache__/
+plots/
+*.egg-info/
+eggs/
+.eggs/
+
+# Files
+*.pyc
+*.egg
+
+
