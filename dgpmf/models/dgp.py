@@ -86,8 +86,12 @@ class DGP_Base(tf.Module):
         std : tf.tensor of shape (num_data, output_dim)
               Contains the std of the predictive distribution
         """
-        mean, var = self.predict_y(inputs, num_samples=self.num_samples)
 
+        for layer in self.gp_layers:
+            layer.needs_build_cholesky = True
+
+        mean, var = self.predict_y(inputs, num_samples=self.num_samples)
+        
         return mean * self.y_std + self.y_mean, tf.math.sqrt(var) * self.y_std
 
     def propagate(self, X, num_samples=1, full_cov=False):
@@ -120,7 +124,7 @@ class DGP_Base(tf.Module):
         F = tf.tile(tf.expand_dims(X, 0), [num_samples, 1, 1])
 
         for layer in self.gp_layers:
-            layer.needs_build_cholesky = True
+            # layer.needs_build_cholesky = True
 
             F, Fmean, Fvar = layer.sample_from_conditional(
                 F, full_cov=full_cov

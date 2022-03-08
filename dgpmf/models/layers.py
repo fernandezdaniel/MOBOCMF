@@ -230,6 +230,10 @@ class SVGPLayer(Layer):
         # Verticality of the layer
         self.output_dim = tf.constant(output_dim, dtype=tf.int32)
 
+        self.Ku = None
+        self.Lu = None
+        self.Ku_tiled = None
+        self.Lu_tiled = None
         self.needs_build_cholesky = True
 
     @tf.function  # DFS: Do we need the tf.function decorator here? (If I put it, an expcetion occurs)
@@ -241,8 +245,11 @@ class SVGPLayer(Layer):
             Ku_tiled = tf.tile(Ku[None, :, :], [self.output_dim, 1, 1])
             Lu_tiled = tf.tile(Lu[None, :, :], [self.output_dim, 1, 1])
             self.needs_build_cholesky = False
-        
-        return Ku, Lu, Ku_tiled, Lu_tiled
+
+            return Ku, Lu, Ku_tiled, Lu_tiled
+
+        else:
+            return self.Ku, self.Lu, self.Ku_tiled, self.Lu_tiled
 
     def conditional_SND(self, X, full_cov=False):
         """
