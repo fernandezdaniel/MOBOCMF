@@ -13,7 +13,7 @@ from dgpmf.models.layers_init import init_layers
 from dgpmf.likelihoods.likelihood import Gaussian
 from utils.dataset import Test_Dataset, Training_Dataset
 from utils.process_flags import manage_experiment_configuration
-from utils.tensorflow_learning import fit_with_metrics, score
+from utils.tensorflow_learning import fit, fit_with_metrics, score
 
 args = manage_experiment_configuration()
 
@@ -82,11 +82,11 @@ dgp = DGP_Base(
 opt = tf.keras.optimizers.Adam(learning_rate=args.lr)
 
 # Perform training
-train_hist, val_hist = fit_with_metrics(
+train_hist, val_hist = fit(
     dgp,
     train_loader,
     opt,
-    val_generator=val_loader,
+    #val_generator=val_loader,
     epochs=args.epochs,
 )
 

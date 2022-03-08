@@ -29,11 +29,9 @@ class Layer(tf.keras.layers.Layer):
 
     def train_mode(self):
         self.training = True
-        #self.generative_function.train_mode()
 
     def eval_mode(self):
         self.training = False
-        #self.generative_function.eval_mode()
 
     def conditional_ND(self, X, full_cov=False):
         """
@@ -149,13 +147,13 @@ class SVGPLayer(Layer):
         def __len__(self):
             return self.Z.shape[0]
 
-        #@tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
+        @tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
         def Kuu(self, kern, jitter=0.0):
             Kzz = kern(self.Z)
             Kzz += jitter * tf.eye(len(self), dtype=self.dtype)
             return Kzz
 
-        #@tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
+        @tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
         def Kuf(self, kern, Xnew):
             Kzx = kern(self.Z, Xnew)
             return Kzx
@@ -234,15 +232,17 @@ class SVGPLayer(Layer):
 
         self.needs_build_cholesky = True
 
-    #@tf.function  # DFS: Do we need the tf.function decorator here? (If I put it, an expcetion occurs)
+    @tf.function  # DFS: Do we need the tf.function decorator here? (If I put it, an expcetion occurs)
     def build_cholesky_if_needed(self):
         # make sure we only compute this once
         if self.needs_build_cholesky:
-            self.Ku = self.feature.Kuu(self.kern, jitter=settings.jitter)
-            self.Lu = tf.linalg.cholesky(self.Ku)
-            self.Ku_tiled = tf.tile(self.Ku[None, :, :], [self.output_dim, 1, 1])
-            self.Lu_tiled = tf.tile(self.Lu[None, :, :], [self.output_dim, 1, 1])
+            Ku = self.feature.Kuu(self.kern, jitter=settings.jitter)
+            Lu = tf.linalg.cholesky(Ku)
+            Ku_tiled = tf.tile(Ku[None, :, :], [self.output_dim, 1, 1])
+            Lu_tiled = tf.tile(Lu[None, :, :], [self.output_dim, 1, 1])
             self.needs_build_cholesky = False
+        
+        return Ku, Lu, Ku_tiled, Lu_tiled
 
     def conditional_SND(self, X, full_cov=False):
         """
@@ -269,7 +269,7 @@ class SVGPLayer(Layer):
             mean, var = self.conditional_ND(X_flat)
             return [tf.reshape(m, [S, N, self.output_dim]) for m in [mean, var]]
 
-    #@tf.function # DFS: Do we need the tf.function decorator here? (If I put it, an expcetion occurs)
+    @tf.function # DFS: Do we need the tf.function decorator here? (If I put it, an expcetion occurs)
     def conditional_ND(self, X, full_cov=False):
         """
 
@@ -292,7 +292,7 @@ class SVGPLayer(Layer):
               Contains the variance value of the distribution for each input
         """
 
-        self.build_cholesky_if_needed()
+        self.Ku, self.Lu, self.Ku_tiled, self.Lu_tiled = self.build_cholesky_if_needed()
 
         Kuf = self.feature.Kuf(self.kern, X)
 
@@ -330,7 +330,7 @@ class SVGPLayer(Layer):
         return mean, var
 
 
-    #@tf.function
+    @tf.function
     def KL(self):
         """
         Computes the KL divergence from the variational distribution of

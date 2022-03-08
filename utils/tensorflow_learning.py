@@ -25,10 +25,19 @@ def fit(
     device : torch device
              Device in which to perform all computations.
     """
-    for _ in range(epochs):
+    import time
+    for _epoch in range(epochs):
+        print("epoch:", _epoch, end=" ")
         # Mini-batch training
+        _i=0
+        _total = 0
+        _l_elapsed_model = []
+        _l_elapsed_loss = []
+        _l_elapsed_tape = []
+        _l_elapsed_opt = []
+        # _ini = time.time()
         for inputs, targets in training_generator:
-
+            print(_i, end=" ")
             if model.dtype != inputs.dtype:
                 inputs = tf.cast(inputs, model.dtype)
             if model.dtype != targets.dtype:
@@ -36,20 +45,58 @@ def fit(
 
             with tf.GradientTape() as tape:
                 # Forward pass
+                _ini_model = time.time()
                 mean_pred, std_pred = model(inputs)
+                _end_model = time.time()
+                _elapsed_model = _end_model-_ini_model
+                _res = round(_elapsed_model,4)
+                _l_elapsed_model.append(_res)
+                print("t model:", _res, end="  ")
 
+                _ini_loss = time.time()
                 # Compute loss function
                 loss = model.nelbo(
                     inputs,
                     targets,
                 )
+                _end_loss = time.time()
+                _elapsed_loss = _end_loss-_ini_loss
+                _res = round(_elapsed_loss,4)
+                _l_elapsed_loss.append(_res)
+                print("t loss :", _res, end="  ")
+
+                _ini_tape = time.time()
                 # Compute gradients
                 gradients = tape.gradient(loss, model.trainable_variables)
+                _end_tape = time.time()
+                _elapsed_tape = _end_tape-_ini_tape
+                _res = round(_elapsed_tape,4)
+                _l_elapsed_tape.append(_res)
+                print("t tape :", _res, end="  ")
 
+                _ini_opt = time.time()
                 # Update weights
                 optimizer.apply_gradients(
                     zip(gradients, model.trainable_variables)
                 )
+                _end_opt = time.time()
+                _elapsed_opt = _end_opt-_ini_opt
+                _res = round(_elapsed_opt,4)
+                _l_elapsed_opt.append(_res)
+                print("t opt  :", _res)
+
+                _total += _elapsed_model+_elapsed_loss+_elapsed_tape+_elapsed_opt
+            _i+=1
+        print()
+        # _end = time.time()
+
+        # print("time elapsed:", _end-_ini)
+        print("time elapsed:", _total)
+        print("m_t model:", round(np.mean(_l_elapsed_model),4), end="  ")
+        print("m_t loss :", round(np.mean(_l_elapsed_loss),4), end="  ")
+        print("m_t tape :", round(np.mean(_l_elapsed_tape),4), end="  ")
+        print("m_t opt  :", round(np.mean(_l_elapsed_opt),4))
+        _total = 0
 
 
 def score(model, generator, device=None):

@@ -19,7 +19,7 @@ class RBFKernel(Kernel):
         self.whitenoise_scale = tf.constant([noise_scale], dtype=self.dtype) # tf.Variable([noise_scale], dtype=self.dtype, name="whitenoise_scale") # I had to change this var to a cte because of the warning issues: """WARNING:tensorflow:Gradients do not exist for variables ['whitenoise_scale:0'] when minimizing the loss. If you're using `model.compile()`, did you forget to provide a `loss`argument?"""
         self.jitter = tf.constant([jitter], dtype=self.dtype)
 
-    #@tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
+    @tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
     def call(self, x1, x2 = None):
         """
         Computation of kernel
@@ -46,7 +46,7 @@ class RBFKernel(Kernel):
         # pairwise distance computation
         distance = self._compute_distance(x1, x2)
 
-        return tf.exp(self.output_scale) * tf.exp(-distance / 2.0) + white_noise
+        return tf.exp(self.output_scale) * tf.exp(-distance**2 / 2.0) + white_noise
 
 
     def get_params(self):
@@ -62,7 +62,7 @@ class RBFKernel(Kernel):
     def get_var_each_point(self, data_inputs):
         return tf.exp(self.output_scale) + (self.jitter + tf.exp(self.whitenoise_scale))
 
-    #@tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
+    @tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
     def Kdiag(self, X, presliced=False):
         return tf.fill(tf.stack([tf.shape(X)[0]]), tf.squeeze(tf.exp(self.output_scale)))
 
