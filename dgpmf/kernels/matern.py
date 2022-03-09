@@ -11,18 +11,18 @@ class MaternKernel(Kernel):
        \end{equation*}
     """
 
-    def __init__(self, length_scale, noise_scale, output_scale, nu=1.5, jitter=1e-3, num_dims=1):
+    def __init__(self, input_dim, length_scale=0.2, noise_scale=1e-6, output_scale=1.0, nu=1.5, jitter=1e-3):
         if nu not in {0.5, 1.5, 2.5}:
             raise RuntimeError("nu expected to be 0.5, 1.5, or 2.5")
         super(MaternKernel, self).__init__(jitter)
         self.nu = nu
-        self.lengthscale = tf.Variable([length_scale]* num_dims, dtype = self.dtype, name="lengthscale")
+        self.lengthscale = tf.Variable([length_scale]* input_dim, dtype = self.dtype, name="lengthscale")
         self.output_scale = tf.Variable([output_scale], dtype=self.dtype, name="output_scale")
         #self.variance = tf.Variable([np.exp(self.output_scale)], dtype=self.dtype, name="variance")
         self.whitenoise_scale = tf.constant([noise_scale], dtype=self.dtype) # tf.Variable([noise_scale], dtype=self.dtype, name="whitenoise_scale") # I had to change this var to a cte because of the warning issues: """WARNING:tensorflow:Gradients do not exist for variables ['whitenoise_scale:0'] when minimizing the loss. If you're using `model.compile()`, did you forget to provide a `loss`argument?"""
         self.jitter = tf.constant([jitter], dtype=self.dtype)
 
-    #@tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
+    @tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
     def call(self, x1, x2 = None):
         """
         Computation of kernel
@@ -79,7 +79,7 @@ class MaternKernel(Kernel):
     def get_var_each_point(self, data_inputs):
         return tf.exp(self.output_scale) + (self.jitter + tf.exp(self.whitenoise_scale))
 
-    #@tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
+    @tf.function # DFS: If uncomment @tf.function, the TensorFlow raise some Warnings
     def Kdiag(self, X, presliced=False):
         return tf.fill(tf.stack([tf.shape(X)[0]]), tf.squeeze(tf.exp(self.output_scale)))
 

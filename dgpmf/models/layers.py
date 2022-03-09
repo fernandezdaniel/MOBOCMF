@@ -110,7 +110,9 @@ class Layer(tf.keras.layers.Layer):
         mean, var = self.conditional_SND(X, full_cov=full_cov)
 
         # set shapes
-        S, N, D = tf.shape(X)[0], tf.shape(X)[1], tf.shape(X)[2]
+        S = tf.shape(X)[0]
+        N = tf.shape(X)[1]
+        D = self.output_dim
 
         mean = tf.reshape(mean, (S, N, D))
         if full_cov:

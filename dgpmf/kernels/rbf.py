@@ -10,10 +10,10 @@ class RBFKernel(Kernel):
        \end{equation*}
     """
 
-    def __init__(self, length_scale, noise_scale, output_scale, jitter=1e-6, num_dims=1):
+    def __init__(self, input_dim, length_scale=0.2, noise_scale=1e-6, output_scale=1.0, jitter=1e-3):
         super(RBFKernel, self).__init__(jitter)
 
-        self.lengthscale = tf.Variable([length_scale]* num_dims, dtype = self.dtype, name="lengthscale")
+        self.lengthscale = tf.Variable([length_scale]* input_dim, dtype = self.dtype, name="lengthscale")
         self.output_scale = tf.Variable([output_scale], dtype=self.dtype, name="output_scale")
         #self.variance = tf.Variable([np.exp(self.output_scale)], dtype=self.dtype, name="variance")
         self.whitenoise_scale = tf.constant([noise_scale], dtype=self.dtype) # tf.Variable([noise_scale], dtype=self.dtype, name="whitenoise_scale") # I had to change this var to a cte because of the warning issues: """WARNING:tensorflow:Gradients do not exist for variables ['whitenoise_scale:0'] when minimizing the loss. If you're using `model.compile()`, did you forget to provide a `loss`argument?"""

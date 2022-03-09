@@ -116,11 +116,11 @@ def init_layers(
             )
 
         if genkern == "Matern52":
-            kern = MaternKernel(length_scale=0.2, noise_scale=1e-6, output_scale=1.0, nu=2.5)
+            kern = MaternKernel(input_dim=dim_in, length_scale=0.2, noise_scale=1e-6, output_scale=1.0, nu=2.5)
         elif genkern == "Matern32":
-            kern = MaternKernel(length_scale=0.2, noise_scale=1e-6, output_scale=1.0, nu=1.5)
+            kern = MaternKernel(input_dim=dim_in, length_scale=0.2, noise_scale=1e-6, output_scale=1.0, nu=1.5)
         elif genkern == "Gaussian" or genkern == "RBF":
-            kern = RBFKernel(length_scale=0.2, noise_scale=1e-6, output_scale=1.0)
+            kern = RBFKernel(input_dim=dim_in, length_scale=0.2, noise_scale=1e-6, output_scale=1.0)
         else:
             raise ValueError("The genkern:", genkern, "is not implemented, please choose an implemented kernel (Matern52, Matern32 or RBF).")
         
