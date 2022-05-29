@@ -1,1 +1,0 @@
-python3.6 scripts/single_experiment.py --dataset_name synthetic
