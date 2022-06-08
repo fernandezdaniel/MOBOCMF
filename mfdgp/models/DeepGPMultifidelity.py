@@ -13,11 +13,13 @@ class DeepGPMultifidelity(DeepGP):
         hidden_layers = []
         for i in range(num_hidden_layers):
             input_dims = train_x_shape[-1] if i == 0 else (1 + train_x_shape[-1])
+            output_dims = 1 if i < num_hidden_layers - 1 else None # Is mandatory that the last layer has output_dims=None
 
             hidden_layers.append(DeepGPMultifidelityHiddenLayer(
                 input_dims=input_dims,
-                output_dims=1 if i < num_hidden_layers - 1 else None, # Is mandatory that the last layer has output_dims=None
+                output_dims=output_dims,
                 mean_type=mean_type_hidden_layers,
+                num_layer=i,
             ))
 
         super().__init__()

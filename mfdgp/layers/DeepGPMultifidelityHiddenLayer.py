@@ -1,13 +1,14 @@
 import torch
 import gpytorch
 from gpytorch.means import ConstantMean, LinearMean
-from gpytorch.kernels import RBFKernel, ScaleKernel
+from gpytorch.kernels import RBFKernel, LinearKernel
 from gpytorch.variational import VariationalStrategy, CholeskyVariationalDistribution
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.models.deep_gps import DeepGPLayer
 
 class DeepGPMultifidelityHiddenLayer(DeepGPLayer):
-    def __init__(self, input_dims, output_dims, num_inducing=25, mean_type='constant'):
+    def __init__(self, num_layer, input_dims, output_dims, num_inducing=25, mean_type='constant'):
+
         if output_dims is None:
             inducing_points = torch.randn(num_inducing, input_dims)
             batch_shape = torch.Size([])
@@ -35,11 +36,13 @@ class DeepGPMultifidelityHiddenLayer(DeepGPLayer):
             self.mean_module = LinearMean(input_dims)
         else:
             raise ValueError("mean_type " + mean_type + " is not recognized")
-        
-        self.covar_module = ScaleKernel(
-            RBFKernel(batch_shape=batch_shape, ard_num_dims=input_dims),
-            batch_shape=batch_shape, ard_num_dims=None
-        )
+
+        Din  = input_dims - 1 if num_layer > 0 else input_dims
+        Dout = output_dims if output_dims is not None else 1
+        self.covar_module = DeepGPMultifidelityHiddenLayer.make_mfdgp_kernel(num_layer, Din, Dout, batch_shape) # ScaleKernel(
+        #     DeepGPMultifidelityHiddenLayer.make_mfdgp_kernel(num_layer, Din, Dout, batch_shape),
+        #     batch_shape=batch_shape, ard_num_dims=None
+        # )
 
     # Given some inputs x, this function calculates the mean and variance of the predictive distribution and returns a multivariate gaussian of that mean and variances
     def forward(self, x): # Cambiar ligeramente de ser necesario para tener en cuenta la nueva aquitectura que se utiliza en los problemas multifidelity
@@ -66,3 +69,23 @@ class DeepGPMultifidelityHiddenLayer(DeepGPLayer):
             x = torch.cat([x] + processed_inputs, dim=-1)
 
         return super().__call__(x, are_samples=bool(len(other_inputs)))
+
+    @classmethod
+    def make_mfdgp_kernel(cls, num_layer, Din, Dout, batch_shape, add_linear=True):
+        
+        if num_layer > 0:
+            
+            D = Din + Dout
+            D_range = list(range(D))
+            
+            k_corr = RBFKernel(batch_shape=batch_shape, ard_num_dims=Din,  active_dims=D_range[:Din], lengthscales=1.0, variance=1.0)
+            k_prev = RBFKernel(batch_shape=batch_shape, ard_num_dims=Dout, active_dims=D_range[Din:], lengthscales=1.0, variance=1.0)
+            k_in   = RBFKernel(batch_shape=batch_shape, ard_num_dims=Din,  active_dims=D_range[:Din], lengthscales=1.0, variance=1.0)
+            
+            if add_linear:
+                return k_corr * (k_prev + LinearKernel(batch_shape=batch_shape, ard_num_dims=Dout, active_dims=D_range[Din:], variance=1.0)) + k_in
+            else:
+                return k_corr * k_prev + k_in
+
+        else:
+            return RBFKernel(batch_shape=batch_shape, ard_num_dims=Din, active_dims=list(range(Din)), variance=1.0, lengthscales=1.0)

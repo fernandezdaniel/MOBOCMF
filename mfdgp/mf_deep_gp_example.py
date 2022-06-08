@@ -14,7 +14,7 @@ from gpytorch.mlls import DeepApproximateMLL
 # from gpytorch.mlls import VariationalELBO
 from mlls.VariationalELBOMultifidelity import VariationalELBOMultifidelity
 
-def test_deep_gp_mf_example():
+def test_mf_deep_gp_example():
     np.random.seed(0)
     torch.manual_seed(0)
 
@@ -98,9 +98,10 @@ def test_deep_gp_mf_example():
     std = np.std(samples, 0)
 
     f, ax = plt.subplots(1, 1, figsize=(16, 12))
-    ax.plot((dgp_train_x[l_input_fidelities == 0]).numpy(), (dgp_train_y[l_input_fidelities == 0]).numpy(), 'b*', label="Fidelity 0")
-    ax.plot((dgp_train_x[l_input_fidelities == 1]).numpy(), (dgp_train_y[l_input_fidelities == 1]).numpy(), 'r*', label="Fidelity 1")
-    ax.plot(np.linspace(-1, 1, 1000), obj_mf1(np.linspace(-1, 1, 1000)), 'g-', label="Ground truth")
+    ax.plot((dgp_train_x[l_input_fidelities == 0]).numpy(), (dgp_train_y[l_input_fidelities == 0]).numpy(), 'bo', label="Fidelity 0")
+    ax.plot((dgp_train_x[l_input_fidelities == 1]).numpy(), (dgp_train_y[l_input_fidelities == 1]).numpy(), 'ro', label="Fidelity 1")
+    ax.plot(np.linspace(-1, 1, 1000), obj_mf1(np.linspace(-1, 1, 1000)), 'b-')
+    ax.plot(np.linspace(-1, 1, 1000), obj_mf1(np.linspace(-1, 1, 1000)), 'r-', label="Ground truth")
     #ax.set_ylim([-3, 3])
     ax.set_xlim([LOW, HIGH])
     line, = ax.plot(x_test.numpy(), np.mean(samples, 0), 'b-')
@@ -115,4 +116,4 @@ def test_deep_gp_mf_example():
 
 
 if __name__ == "__main__":
-    test_deep_gp_mf_example()
+    test_mf_deep_gp_example()
