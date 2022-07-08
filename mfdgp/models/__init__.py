@@ -4,4 +4,5 @@ from models.DeepGPMultifidelity import DeepGPMultifidelity
 
 __all__ = [
     "DeepGPMultifidelity",
+    "MyDeepGP",
 ]
