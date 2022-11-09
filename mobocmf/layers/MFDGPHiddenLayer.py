@@ -6,7 +6,7 @@ from gpytorch.variational import VariationalStrategy, CholeskyVariationalDistrib
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.models.deep_gps import DeepGPLayer
 
-class DeepGPMultifidelityHiddenLayer(DeepGPLayer):
+class MFDGPHiddenLayer(DeepGPLayer):
     def __init__(self, num_layer, input_dims, output_dims, num_inducing=25, mean_type='constant'):
 
         if output_dims is None:
@@ -28,7 +28,7 @@ class DeepGPMultifidelityHiddenLayer(DeepGPLayer):
             learn_inducing_locations=True
         )
 
-        super(DeepGPMultifidelityHiddenLayer, self).__init__(variational_strategy, input_dims, output_dims)
+        super(MFDGPHiddenLayer, self).__init__(variational_strategy, input_dims, output_dims)
 
         if mean_type == 'constant':
             self.mean_module = ConstantMean(batch_shape=batch_shape)
@@ -43,7 +43,7 @@ class DeepGPMultifidelityHiddenLayer(DeepGPLayer):
         Dout = output_dims if output_dims is not None else 1
         self.covar_module = \
         ScaleKernel(
-             DeepGPMultifidelityHiddenLayer.make_mfdgp_kernel(num_layer, Din, Dout, batch_shape, lengthscale=0.05),
+             MFDGPHiddenLayer.make_mfdgp_kernel(num_layer, Din, Dout, batch_shape, lengthscale=0.05),
              batch_shape=batch_shape, ard_num_dims=None
         )
 

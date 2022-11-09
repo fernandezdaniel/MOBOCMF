@@ -1,5 +1,5 @@
 # MFDGP
 
-To execute te code with plots use: 
-python3 mfdgp/deep_gp_mf_example.py
+To execute the test with a comparison between dgp and mfdgp in a mf problem use: 
+python3 mobocmf/mfdgp_example.py
 

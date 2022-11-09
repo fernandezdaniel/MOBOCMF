@@ -10,7 +10,7 @@ from gpytorch.distributions import MultivariateNormal
 from gpytorch.likelihoods import GaussianLikelihood
 
 
-class GaussianLikelihoodMultifidelity(GaussianLikelihood):
+class GaussianLikelihoodMF(GaussianLikelihood):
     """Base class for Gaussian Likelihoods, supporting general heteroskedastic noise models."""
 
     def expected_log_prob(self, target: Tensor, l_inputs: list, *params: Any, **kwargs: Any) -> Tensor:

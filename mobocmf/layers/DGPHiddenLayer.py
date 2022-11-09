@@ -1,12 +1,13 @@
 import torch
 import gpytorch
-from gpytorch.means import ConstantMean, LinearMean
+from gpytorch.means import ConstantMean, LinearMean, ZeroMean
 from gpytorch.kernels import RBFKernel, ScaleKernel
-from gpytorch.variational import VariationalStrategy, CholeskyVariationalDistribution
+from gpytorch.variational import VariationalStrategy, CholeskyVariationalDistribution, NaturalVariationalDistribution
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.models.deep_gps import DeepGPLayer
 
-class ToyDeepGPHiddenLayer(DeepGPLayer):
+
+class DGPHiddenLayer(DeepGPLayer):
     def __init__(self, input_dims, output_dims, num_inducing=25, mean_type='constant'):
         if output_dims is None:
             inducing_points = torch.randn(num_inducing, input_dims)
@@ -19,6 +20,10 @@ class ToyDeepGPHiddenLayer(DeepGPLayer):
             num_inducing_points=num_inducing,
             batch_shape=batch_shape
         )
+        # variational_distribution = NaturalVariationalDistribution(
+        #     num_inducing_points=num_inducing,
+        #     batch_shape=batch_shape
+        # )
 
         variational_strategy = VariationalStrategy(
             self,
@@ -27,30 +32,23 @@ class ToyDeepGPHiddenLayer(DeepGPLayer):
             learn_inducing_locations=True
         )
 
-        super(ToyDeepGPHiddenLayer, self).__init__(variational_strategy, input_dims, output_dims)
+        super(DGPHiddenLayer, self).__init__(variational_strategy, input_dims, output_dims)
 
         if mean_type == 'constant':
             self.mean_module = ConstantMean(batch_shape=batch_shape)
         else:
             self.mean_module = LinearMean(input_dims)
-
+        
         self.covar_module = ScaleKernel(
             RBFKernel(batch_shape=batch_shape, ard_num_dims=input_dims),
             batch_shape=batch_shape, ard_num_dims=None
         )
 
-        init_lengthscale = 0.05
-        self.covar_module.base_kernel.lengthscale = init_lengthscale
-
-        print("",end="")
-
-    # Given some inputs x, this function calculates the mean and variance of the predictive distribution and returns a multivariate gaussian of that mean and variances
-    def forward(self, x): # Cambiar ligeramente de ser necesario para tener en cuenta la nueva aquitectura que se utiliza en los problemas multifidelity
-        mean_x = self.mean_module(x)
+    def forward(self, x):
+        mean_x = self.mean_module(x) 
         covar_x = self.covar_module(x)
         return MultivariateNormal(mean_x, covar_x)
 
-    # Given some inputs x this function returns the mean and variance at the end of the layer. Also this function allow us to add to the input of the layer new points 'other_inputs'
     def __call__(self, x, *other_inputs, **kwargs):
         """
         Overriding __call__ isn't strictly necessary, but it lets us add concatenation based skip connections
@@ -69,3 +67,4 @@ class ToyDeepGPHiddenLayer(DeepGPLayer):
             x = torch.cat([x] + processed_inputs, dim=-1)
 
         return super().__call__(x, are_samples=bool(len(other_inputs)))
+

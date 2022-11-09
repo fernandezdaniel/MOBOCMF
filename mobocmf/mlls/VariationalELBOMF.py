@@ -4,10 +4,11 @@ import torch
 from gpytorch.mlls import VariationalELBO
 
 
-class VariationalELBOMultifidelity(VariationalELBO):
+class VariationalELBOMF(VariationalELBO):
     r"""
     The variational evidence lower bound (ELBO) for multifidelity.
-
+    
+    The matho expresion is pending...
     .. math::
        \begin{align*}
           \mathcal{L}_\text{ELBO-MF}

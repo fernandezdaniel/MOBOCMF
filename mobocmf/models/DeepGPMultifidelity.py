@@ -1,21 +1,19 @@
-import numpy as np
 import torch
-import tqdm
-# from gpytorch.likelihoods import GaussianLikelihood
-from likelihoods.GaussianLikelihoodMultifidelity import GaussianLikelihoodMultifidelity
 from gpytorch.models.deep_gps import DeepGP
+# from gpytorch.likelihoods import GaussianLikelihood
 
-from layers.DeepGPMultifidelityHiddenLayer import DeepGPMultifidelityHiddenLayer
+from mobocmf.likelihoods.GaussianLikelihoodMF import GaussianLikelihoodMF
+from mobocmf.layers.MFDGPHiddenLayer import MFDGPHiddenLayer
 
 class DeepGPMultifidelity(DeepGP):
-    def __init__(self, train_x_shape, num_hidden_layers, mean_type_hidden_layers='zero'):
+    def __init__(self, shape_x_train, num_fidelities, mean_type_hidden_layers='constant'):
 
         hidden_layers = []
-        for i in range(num_hidden_layers):
-            input_dims = train_x_shape[-1] if i == 0 else (1 + train_x_shape[-1])
-            output_dims = 1 if i < num_hidden_layers - 1 else None # Is mandatory that the last layer has output_dims=None
+        for i in range(num_fidelities):
+            input_dims = shape_x_train[-1] if i == 0 else (1 + shape_x_train[-1])
+            output_dims = 1 if i < num_fidelities - 1 else None # Is mandatory that the last layer has output_dims=None
 
-            hidden_layers.append(DeepGPMultifidelityHiddenLayer(
+            hidden_layers.append(MFDGPHiddenLayer(
                 input_dims=input_dims,
                 output_dims=output_dims,
                 mean_type=mean_type_hidden_layers, #mean_type_hidden_layers if i < num_hidden_layers - 1 else 'constant',
@@ -25,11 +23,11 @@ class DeepGPMultifidelity(DeepGP):
         super().__init__()
 
         self.name_hidden_layer = "hidden_layer_"
-        self.num_hidden_layers = num_hidden_layers
+        self.num_hidden_layers = num_fidelities
         for i, hidden_layer in enumerate(hidden_layers):
             setattr(self, self.name_hidden_layer + str(i+1), hidden_layer)
 
-        self.likelihood = GaussianLikelihoodMultifidelity()
+        self.likelihood = GaussianLikelihoodMF()
 
     def propagate(self, inputs):
 
@@ -37,7 +35,7 @@ class DeepGPMultifidelity(DeepGP):
         inputs_layer = inputs
         for i in range(self.num_hidden_layers):
             hidden_layer = getattr(self, self.name_hidden_layer + str(i+1))
-            inputs_layer = hidden_layer(inputs_layer) if i == 0 else hidden_layer(inputs_layer, inputs) # Parece que falla aqui despues de haber puesto como que la media sea zero
+            inputs_layer = hidden_layer(inputs) if i == 0 else hidden_layer(inputs_layer, inputs) # DFS: It seems that it stops working here after setting the mean to zero
             l_outputs[i] = inputs_layer
 
         return l_outputs
@@ -52,7 +50,7 @@ class DeepGPMultifidelity(DeepGP):
         with torch.no_grad():
             mus = []
             variances = []
-            lls = []
+            # lls = []
             preds = self.likelihood(self(test_x, all_fidelities=all_fidelities, fidelity_layer=fidelity_layer))
             mus.append(preds.mean)
             variances.append(preds.variance)

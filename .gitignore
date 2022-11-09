@@ -5,10 +5,10 @@ plots/
 *.egg-info/
 eggs/
 .eggs/
-build/
+old/
 
 # Files
 *.pyc
 *.egg
-*.ipynb
+*_old.py
 
