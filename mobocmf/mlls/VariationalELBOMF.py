@@ -1,57 +1,43 @@
-#!/usr/bin/env python3
-
 import torch
 from gpytorch.mlls import VariationalELBO
+import numpy as np
 
+# Evaluates ELBO of the Multi-fidelity DGP
 
 class VariationalELBOMF(VariationalELBO):
-    r"""
-    The variational evidence lower bound (ELBO) for multifidelity.
-    
-    The matho expresion is pending...
-    .. math::
-       \begin{align*}
-          \mathcal{L}_\text{ELBO-MF}
-          \approx
-          \sum_{t=1}^T \sum_{i=1}^N \mathbb{E}_{q( f_i^t)} \left[ \log p( y_i^t \! \mid \! f_i^t) \right]
-          - \beta \: \text{KL} \left[ q( \mathbf u) \Vert p( \mathbf u) \right]
-       \end{align*}
-    """
 
-    def forward(self, l_approximate_dist_f, target, **kwargs):
-        r"""
-        Computes the Variational ELBO given :math:`q(\mathbf f)` and `\mathbf y`.
-        Calling this function will call the likelihood's `expected_log_prob` function.
+    # The constructor is the same as _ApproximateMarginalLogLikelihood, but the likelihood shoulb be none since we have several
+    # likelhoods, one per layer.
 
-        Args:
-            :attr:`approximate_dist_f` (:obj:`gpytorch.distributions.MultivariateNormal`):
-                :math:`q(\mathbf f)` the outputs of the latent function (the :obj:`gpytorch.models.ApproximateGP`)
-            :attr:`target` (`torch.Tensor`):
-                :math:`\mathbf y` The target values
-            :attr:`**kwargs`:
-                Additional arguments passed to the likelihood's `expected_log_prob` function.
-        """
-        # Get likelihood term and KL term
-        num_batch = l_approximate_dist_f[0].event_shape[0]
-        log_likelihood = self._log_likelihood_term(l_approximate_dist_f, target, **kwargs).div(num_batch)
-        kl_divergence = self.model.variational_strategy.kl_divergence().div(self.num_data / self.beta)
+    # num_data should be the total number of points
+    # num_fidelities should be the total number of fidelities
 
-        # Add any additional registered loss terms
-        added_loss = torch.zeros_like(log_likelihood)
-        had_added_losses = False
-        for added_loss_term in self.model.added_loss_terms():
-            added_loss.add_(added_loss_term.loss())
-            had_added_losses = True
+    def __init__(self, model, num_data, num_fidelities):
 
-        # Log prior term
-        log_prior = torch.zeros_like(log_likelihood)
-        for name, module, prior, closure, _ in self.named_priors():
-            log_prior.add_(prior.log_prob(closure(module)).sum().div(self.num_data))
+        super().__init__(None, model, num_data)
+        self.num_data = num_data
+        self.num_fidelities = num_fidelities
 
-        if self.combine_terms:
-            return log_likelihood - kl_divergence + log_prior - added_loss
-        else:
-            if had_added_losses:
-                return log_likelihood, kl_divergence, log_prior, added_loss
-            else:
-                return log_likelihood, kl_divergence, log_prior
+    # The forward method should receive the predictive distribution for the point, the target, and the corresponding fidelity
+    # Call is a method that calls forward
+
+    def forward(self, l_approximate_dist_f, target, fidelities):
+
+        assert target.shape[ 0 ] <= target.shape[ 1 ]   # This checks that the target has the proper shape
+
+        num_batch = target.shape[ 1 ]
+        data_term = 0.0
+
+        for i in range(self.num_fidelities):
+
+            if (fidelities == i).sum() != 0:
+                likelihood = getattr(self.model, self.model.name_hidden_layer_likelihood + str(i))
+                data_term += (likelihood.expected_log_prob(target, l_approximate_dist_f[ i ])[ fidelities.T == i ]).sum()
+
+        kl_divergence = self.model.variational_strategy.kl_divergence()
+
+        # We return elbo per batch
+
+        return data_term - kl_divergence * num_batch / self.num_data 
+
+

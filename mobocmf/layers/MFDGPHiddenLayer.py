@@ -1,100 +1,125 @@
+import numpy as np
 import torch
 import gpytorch
 from gpytorch.means import ConstantMean, LinearMean, ZeroMean
 from gpytorch.kernels import RBFKernel, LinearKernel, ScaleKernel
-from gpytorch.variational import VariationalStrategy, CholeskyVariationalDistribution
+from gpytorch.variational import UnwhitenedVariationalStrategy, CholeskyVariationalDistribution
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.models.deep_gps import DeepGPLayer
+from gpytorch.lazy import LazyEvaluatedKernelTensor
+
+class CovarianceMatrixMF(LazyEvaluatedKernelTensor):
+
+    def add_jitter(self, jitter_val = 2e-6):
+        return super(LazyEvaluatedKernelTensor, self).add_jitter(jitter_val)
 
 class MFDGPHiddenLayer(DeepGPLayer):
-    def __init__(self, num_layer, input_dims, output_dims, num_inducing=25, mean_type='constant'):
 
-        if output_dims is None:
-            inducing_points = torch.randn(num_inducing, input_dims)
-            batch_shape = torch.Size([])
+    # input_dims is the dimensionality of the attribute vector x that is put into the layer 
+
+    def __init__(self, num_layer, input_dims, inducing_points, inducing_values, num_fidelities, y_high_std = 1.0):
+
+        self.num_layer = num_layer
+        self.input_dims = input_dims
+        num_inducing = inducing_points.shape[ 0 ]
+        batch_shape = torch.Size([])
+
+        # We initialize the covariance function depending on whether we are a first layer or not
+
+        if num_layer == 0:
+
+            covar_module = ScaleKernel(RBFKernel(batch_shape=batch_shape, ard_num_dims=input_dims, \
+                active_dims=list(range(input_dims))), batch_shape=batch_shape, ard_num_dims=None)
+            
+            covar_module.base_kernel.initialize(lengthscale = 1.0 * np.ones(input_dims))
+            covar_module.initialize(outputscale = 1.0)
+
         else:
-            inducing_points = torch.randn(output_dims, num_inducing, input_dims)
-            batch_shape = torch.Size([output_dims])
 
-        variational_distribution = CholeskyVariationalDistribution(
-            num_inducing_points=num_inducing,
-            batch_shape=batch_shape
-        )
+            # We use the fact that the output dim of a layer is always 1 in this model
 
-        variational_strategy = VariationalStrategy(
-            self,
-            inducing_points,
-            variational_distribution,
-            learn_inducing_locations=True
-        )
+            D_range = list(range(input_dims))
+            
+            k_x_1 = ScaleKernel(RBFKernel(batch_shape=batch_shape, ard_num_dims=input_dims - 1,  \
+                active_dims=D_range[ 0 : (input_dims - 1) ]), batch_shape=batch_shape, ard_num_dims=None)
 
-        super(MFDGPHiddenLayer, self).__init__(variational_strategy, input_dims, output_dims)
+            k_f = ScaleKernel(RBFKernel(batch_shape=batch_shape, ard_num_dims=1, \
+                active_dims=D_range[ (input_dims - 1) : input_dims ]), batch_shape=batch_shape, ard_num_dims=None)
 
-        if mean_type == 'constant':
-            self.mean_module = ConstantMean(batch_shape=batch_shape)
-        elif mean_type == 'linear':
-            self.mean_module = LinearMean(input_dims)
-        elif mean_type == 'zero':
-            self.mean_module = ZeroMean(input_dims)
+            k_x_2 = ScaleKernel(RBFKernel(batch_shape=batch_shape, ard_num_dims=input_dims - 1,  \
+                active_dims=D_range[ 0 : (input_dims - 1) ]), batch_shape=batch_shape, ard_num_dims=None)
+
+            k_lin = LinearKernel(batch_shape=batch_shape, active_dims=D_range[ (input_dims - 1) : input_dims ])
+
+            k_x_1.base_kernel.initialize(lengthscale = 1.0 * np.ones(input_dims - 1))
+            k_f.base_kernel.initialize(lengthscale = 1.0 * np.ones(1))
+            k_x_2.base_kernel.initialize(lengthscale = 1.0 * np.ones(input_dims - 1))
+            k_lin.initialize(variance = 1.0 * np.ones(1))
+
+            k_x_1.initialize(outputscale = 1.0)
+            k_f.initialize(outputscale = 1.0)
+            k_x_2.initialize(outputscale = 1.0)
+
+            covar_module = k_x_1 * (k_lin + k_f) + k_x_2
+
+        # We initialize the variational approximation
+
+        variational_distribution = CholeskyVariationalDistribution(num_inducing_points=num_inducing, \
+            batch_shape=batch_shape, mean_init_std = 0.0)
+
+        # We initialize the covariance matrix to something diagonal with small variances. In the high fidelity we use the prior.
+
+        if num_layer == num_fidelities - 1:
+            init_dist = gpytorch.distributions.MultivariateNormal(inducing_values, \
+                covar_module(inducing_points) * (1e-2 * y_high_std**2)**2)
         else:
-            raise ValueError("mean_type " + mean_type + " is not recognized")
+            init_dist = gpytorch.distributions.MultivariateNormal(inducing_values, torch.eye(num_inducing) * 1e-8)
 
-        Din  = input_dims - 1 if num_layer > 0 else input_dims
-        Dout = output_dims if output_dims is not None else 1
-        self.covar_module = \
-        ScaleKernel(
-             MFDGPHiddenLayer.make_mfdgp_kernel(num_layer, Din, Dout, batch_shape, lengthscale=0.05),
-             batch_shape=batch_shape, ard_num_dims=None
-        )
+        variational_distribution.initialize_variational_distribution(init_dist)
 
-        # ScaleKernel(
-        #     RBFKernel(batch_shape=batch_shape, ard_num_dims=input_dims),
-        #     batch_shape=batch_shape, ard_num_dims=None
-        # )
+        variational_strategy = UnwhitenedVariationalStrategy(self, inducing_points, variational_distribution, \
+            learn_inducing_locations=False)
+        variational_strategy.variational_params_initialized = torch.tensor(1) # XXX DHL This avoids random initialization
 
+        # XXX DHL None argument generates MultivNormal not MultiTaskMultivarnormal, used often at the last layer, 
+        # but here we use it at all layers
 
-    # Given some inputs x, this function calculates the mean and variance of the predictive distribution and returns a multivariate gaussian of that mean and variances
-    def forward(self, x): # Cambiar ligeramente de ser necesario para tener en cuenta la nueva aquitectura que se utiliza en los problemas multifidelity
+        super(MFDGPHiddenLayer, self).__init__(variational_strategy, input_dims, None) 
+
+        self.mean_module = ZeroMean()
+        self.covar_module = covar_module
+
+    def forward(self, x): 
+
+        # We check that the input is the right one
+
+        assert x.shape[ -1 ] == self.input_dims
+
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
+
+        covar_x.__class__ = CovarianceMatrixMF # This replaces the add_jitter method which uses 1e-3 by default.
+
         return MultivariateNormal(mean_x, covar_x)
 
-    # Given some inputs x this function returns the mean and variance at the end of the layer. Also this function allow us to add to the input of the layer new points 'other_inputs'
     def __call__(self, x, *other_inputs, **kwargs):
-        """
-        Overriding __call__ isn't strictly necessary, but it lets us add concatenation based skip connections
-        easily. For example, hidden_layer2(hidden_layer1_outputs, inputs) will pass the concatenation of the first
-        hidden layer's outputs and the input data to hidden_layer2.
-        """
+
+        # This adds extra inputs, if given
+
         if len(other_inputs):
-            if isinstance(x, gpytorch.distributions.MultitaskMultivariateNormal):
+
+            if isinstance(x, gpytorch.distributions.MultivariateNormal):
                 x = x.rsample()
 
-            processed_inputs = [
-                inp.unsqueeze(0).expand(gpytorch.settings.num_likelihood_samples.value(), *inp.shape)
-                for inp in other_inputs
-            ]
+            processed_inputs = []
+
+            for inp in other_inputs:
+
+                if isinstance(inp, gpytorch.distributions.MultivariateNormal):
+                    inp = inp.rsample().T
+
+                processed_inputs.append(inp)
 
             x = torch.cat([x] + processed_inputs, dim=-1)
-
-        return super().__call__(x, are_samples=bool(len(other_inputs)))
-
-    @classmethod
-    def make_mfdgp_kernel(cls, num_layer, Din, Dout, batch_shape, lengthscale=0.1, add_linear=True):
         
-        if num_layer > 0:
-            
-            D = Din + Dout
-            D_range = list(range(D))
-            
-            k_corr = ScaleKernel(RBFKernel(batch_shape=batch_shape, ard_num_dims=Din,  active_dims=D_range[:Din], lengthscales=lengthscale, variance=1.0), batch_shape=batch_shape, ard_num_dims=None)
-            k_prev = ScaleKernel(RBFKernel(batch_shape=batch_shape, ard_num_dims=Dout, active_dims=D_range[Din:], lengthscales=lengthscale, variance=1.0), batch_shape=batch_shape, ard_num_dims=None)
-            k_in   = ScaleKernel(RBFKernel(batch_shape=batch_shape, ard_num_dims=Din,  active_dims=D_range[:Din], lengthscales=lengthscale, variance=1.0), batch_shape=batch_shape, ard_num_dims=None)
-            
-            if add_linear:
-                return k_corr * (k_prev + ScaleKernel(LinearKernel(batch_shape=batch_shape, ard_num_dims=Dout, active_dims=D_range[Din:], variance=1.0), batch_shape=batch_shape, ard_num_dims=None)) + k_in
-            else:
-                return k_corr * k_prev + k_in
-
-        else:
-            return ScaleKernel(RBFKernel(batch_shape=batch_shape, ard_num_dims=Din, active_dims=list(range(Din)), variance=1.0, lengthscales=lengthscale), batch_shape=batch_shape, ard_num_dims=None)
+        return super().__call__(x, are_samples=bool(len(other_inputs)))

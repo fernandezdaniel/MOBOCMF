@@ -6,9 +6,15 @@ plots/
 eggs/
 .eggs/
 old/
+pstats/
+R_test/
+build/
 
 # Files
 *.pyc
 *.egg
 *_old.py
+*.pstats
+*.png
+*.lprof
 
