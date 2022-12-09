@@ -27,10 +27,4 @@ def forrester_mf0(x, sd=0):
     """
     high_fidelity = forrester_mf1(x, 0)
     return (0.5 * high_fidelity + 10 * (x[:, [0]] - 0.5) + 5 + np.random.randn(x.shape[0], 1) * sd)
-
-def forrester_16_mf1(x, sd=0):
-    return (forrester_mf1(x, sd=sd) + 2) / 16
-
-def forrester_16_mf0(x, sd=0):
-    return (forrester_mf0(x, sd=sd) + 2) / 16
     

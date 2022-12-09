@@ -85,7 +85,7 @@ for i in range(num_epochs_1):
     for (x_batch, y_batch, fidelities) in minibatch_iter:
 
         with gpytorch.settings.num_likelihood_samples(1):
-            optimizer.zero_grad() 
+            optimizer.zero_grad()
             output = model(x_batch)
             loss = -elbo(output, y_batch.T, fidelities)
             loss.backward()                
