@@ -85,7 +85,7 @@ for i in range(num_epochs_1):
     for (x_batch, y_batch, fidelities) in minibatch_iter:
 
         with gpytorch.settings.num_likelihood_samples(1):
-            optimizer.zero_grad()
+            optimizer.zero_grad() 
             output = model(x_batch)
             loss = -elbo(output, y_batch.T, fidelities)
             loss.backward()                
@@ -203,6 +203,13 @@ line.set_label('Predictive distribution GP High Fidelity')
 line = ax.fill_between(test_inputs.numpy()[:,0], (y_mean_gp + np.sqrt(y_var_gp)), \
     (y_mean_gp - np.sqrt(y_var_gp)), color="blue", alpha=0.5)
 line.set_label('Confidence GP High Fidelity')
+
+# We sample from the MFDG and plot the samples (five samples are generated from each fidelity)
+
+for i in range(5):
+        samples = model.sample_function_from_each_layer()
+        line, = ax.plot(test_inputs.numpy(), samples[ 0 ](test_inputs.numpy()) * y_low_std + y_low_mean, '-', color = "gray")
+        line, = ax.plot(test_inputs.numpy(), samples[ 1 ](test_inputs.numpy()) * y_high_std + y_high_mean, '-', color = "gray")
 
 ax.legend()
 plt.show()

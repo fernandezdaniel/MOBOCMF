@@ -137,17 +137,16 @@ class MFDGPHiddenLayer(DeepGPLayer):
     def _rff_sample_posterior_weights(self, y_data, S, Phi, sigma2=1e-6):
 
         randomness  = np.random.normal(loc=0., scale=1., size=Phi.shape[0])
-        
-        A = Phi @ Phi.T + sigma2*np.eye(Phi.shape[0])
+
+        A = Phi @ Phi.T + sigma2 * np.eye(Phi.shape[0])
         chol_A_inv = spla.cholesky(A)
         A_inv = self._chol2inv(chol_A_inv)
 
         m = spla.cho_solve((chol_A_inv, False), Phi @ y_data)
-        extraVar = A_inv @ Phi @ S @ Phi.T @ A_inv
-        return m + (randomness @ spla.cholesky(sigma2*A_inv + extraVar, lower=False)).T
+        extraVar = (A_inv @ Phi) @ S @ (Phi.T @ A_inv)
+        return m + (randomness @ spla.cholesky(sigma2 * A_inv + extraVar, lower=False)).T
 
-    def _sample_from_posterior_layer0(self, input_dim, likelihood, nFeatures=200, seed=None):
-        np.random.seed(seed)
+    def _sample_from_posterior_layer0(self, input_dim, sample_from_posterior_last_layer = None, nFeatures=500):
 
         x_data = self.variational_strategy.inducing_points.detach().numpy()
         y_data = self.variational_strategy.variational_distribution.mean.detach().numpy()[:, None]
@@ -155,27 +154,26 @@ class MFDGPHiddenLayer(DeepGPLayer):
 
         lengthscale = self.covar_module.base_kernel.lengthscale.detach().numpy().item()
         alpha  = self.covar_module.outputscale.detach().numpy().item()
-        sigma2 = likelihood.noise.detach().numpy().item()
 
         W   = np.random.normal(size=(nFeatures, input_dim)) / lengthscale
         b   = np.random.uniform(low=0., high=(2 * np.pi), size=(nFeatures, 1))
         Phi = self._phi_rbf(x_data, W, b, alpha, nFeatures)
         
-        theta = self._rff_sample_posterior_weights(y_data[:, 0], S_data, Phi, sigma2=sigma2)
+        theta = self._rff_sample_posterior_weights(y_data[:, 0], S_data, Phi)
         
         def wrapper(x):
             features = self._phi_rbf(x, W, b, alpha, nFeatures)
             return theta @ features
 
         return wrapper
-
     
-    def _sample_from_posterior(self, input_dim, likelihood, sample_from_posterior_last_layer, nFeatures=200, seed=None):
-        np.random.seed(seed)
+    def _sample_from_posterior(self, input_dim, sample_from_posterior_last_layer = None, nFeatures=500):
+
+        assert sample_from_posterior_last_layer is not None
 
         xf_data = self.variational_strategy.inducing_points.detach().numpy()
-        x_data = xf_data[:, 0, None]
-        f_data = sample_from_posterior_last_layer(x_data) #xf_data[:, 1]
+        x_data = xf_data[:, 0 : (xf_data.shape[ 1 ] - 1) ]
+        f_data = xf_data[:, xf_data.shape[ 1 ] - 1 ]
         y_data = self.variational_strategy.variational_distribution.mean.detach().numpy()[:, None]
         S_data = self.variational_strategy.variational_distribution.covariance_matrix.detach().numpy()
 
@@ -190,24 +188,22 @@ class MFDGPHiddenLayer(DeepGPLayer):
 
         nu_lin    = self.covar_module.kernels[0].kernels[1].kernels[0].variance.detach().numpy().item()
 
-        sigma2 = likelihood.noise.detach().numpy().item()
-
         W_x1  = np.random.normal(size=(nFeatures, input_dim)) / lengthscale_x1
         W_f   = np.random.normal(size=nFeatures) / lengthscale_f
-        W_x1f = np.concatenate([[W_x1[:, 0]],[W_f]]).T                            # XXX DFS Is this line correct? 
+        W_x1f = np.concatenate([[W_x1[:, 0]], [W_f]]).T                            
         W_x2  = np.random.normal(size=(nFeatures, input_dim)) / lengthscale_x2
 
         b_x1  = np.random.uniform(low=0., high=(2 * np.pi), size=(nFeatures, 1))
-        b_x1f = b_x1                                                              # XXX DFS Is this line correct? 
+        b_x1f = b_x1
         b_x2  = np.random.uniform(low=0., high=(2 * np.pi), size=(nFeatures, 1))
 
         Phi_x1  = self._phi_rbf(x_data,  W_x1,  b_x1,  alpha_x1, nFeatures)
         Phi_x1f = self._phi_rbf(xf_data, W_x1f, b_x1f, alpha_x1f, nFeatures)
         Phi_x2  = self._phi_rbf(x_data,  W_x2,  b_x2,  alpha_x2, nFeatures)
 
-        Phi = np.concatenate([(Phi_x1 * f_data * nu_lin), Phi_x1f, Phi_x2])
+        Phi = np.concatenate([(Phi_x1 * f_data * np.sqrt(nu_lin)), Phi_x1f, Phi_x2])
 
-        theta = self._rff_sample_posterior_weights(y_data[:, 0], S_data, Phi, sigma2=sigma2)
+        theta = self._rff_sample_posterior_weights(y_data[:, 0], S_data, Phi)
 
         def wrapper(x):
             f = sample_from_posterior_last_layer(x)
@@ -217,7 +213,7 @@ class MFDGPHiddenLayer(DeepGPLayer):
             features_x1f = self._phi_rbf(xf, W_x1f, b_x1f, alpha_x1f, nFeatures)
             features_x2  = self._phi_rbf(x,  W_x2,  b_x2,  alpha_x2, nFeatures)
 
-            features = np.concatenate([(features_x1 * f * nu_lin), features_x1f, features_x2])
+            features = np.concatenate([(features_x1 * f * np.sqrt(nu_lin)), features_x1f, features_x2])
 
             return theta @ features
 

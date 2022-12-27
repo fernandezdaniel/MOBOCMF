@@ -11,7 +11,7 @@ class DeepGPMultifidelity(DeepGP):
 
         hidden_layers = []
 
-        input_dims = x_train.shape[ -1 ]
+        self.input_dims = x_train.shape[ -1 ]
         y_high_std = np.std(y_train[ fidelities == num_fidelities - 1 ].numpy())
 
         for i in range(num_fidelities):
@@ -22,7 +22,7 @@ class DeepGPMultifidelity(DeepGP):
                 to_sel = (fidelities == 0).flatten()
                 inducing_points = torch.from_numpy(x_train.numpy()[ to_sel, : ])
                 inducing_values = torch.from_numpy(y_train.numpy()[ to_sel, : ].flatten())
-                hidden_layers.append(MFDGPHiddenLayer(input_dims=input_dims, num_layer=i, inducing_points=inducing_points, \
+                hidden_layers.append(MFDGPHiddenLayer(input_dims=self.input_dims, num_layer=i, inducing_points=inducing_points, \
                     inducing_values = inducing_values, num_fidelities = num_fidelities))
             else:
 
@@ -31,7 +31,7 @@ class DeepGPMultifidelity(DeepGP):
                 to_sel = (fidelities == i - 1).flatten()
                 inducing_points = torch.from_numpy(np.hstack((x_train.numpy()[ to_sel, : ][::2], (y_train.numpy()[ to_sel, : ][::2]))))
                 inducing_values = torch.from_numpy(y_train.numpy()[ to_sel, : ][::2].flatten()) * 0.0
-                hidden_layers.append(MFDGPHiddenLayer(input_dims=input_dims + 1, num_layer=i, \
+                hidden_layers.append(MFDGPHiddenLayer(input_dims=self.input_dims + 1, num_layer=i, \
                     inducing_points=inducing_points, inducing_values = inducing_values, num_fidelities = num_fidelities, \
                     y_high_std = np.std(y_train.numpy()[ fidelities == num_fidelities - 1 ])))
 
@@ -100,5 +100,18 @@ class DeepGPMultifidelity(DeepGP):
             variances.append(preds.variance)
 
         return torch.cat(mus, dim=-1), torch.cat(variances, dim=-1)
+
+    def sample_function_from_each_layer(self):
+
+        result = []
+        sample_from_posterior_last_layer = None
+        
+        for i in range(self.num_hidden_layers):
+            hidden_layer = getattr(self, self.name_hidden_layer + str(i))
+            sample = hidden_layer.sample_from_posterior(self.input_dims, sample_from_posterior_last_layer)
+            sample_from_posterior_last_layer = sample
+            result.append(sample)
+
+        return result
 
 
