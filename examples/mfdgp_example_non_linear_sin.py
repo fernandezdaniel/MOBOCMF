@@ -4,11 +4,11 @@ import torch
 import gpytorch
 import matplotlib.pyplot as plt
 from torch.utils.data import TensorDataset, DataLoader
-from mobocmf.models.ExactGPModel import ExactGPModel
+from mobocmf.models.exact_gp import ExactGPModel
 from mobocmf.test_functions.non_linear_sin import non_linear_sin_mf1, non_linear_sin_mf0 
 from mobocmf.test_functions.non_linear_sin import non_linear_sin_mf1, non_linear_sin_mf0
-from mobocmf.models.DeepGPMultifidelity import DeepGPMultifidelity
-from mobocmf.mlls.VariationalELBOMF import VariationalELBOMF
+from mobocmf.models.mfdgp import MFDGP
+from mobocmf.mlls.variational_elbo_mf import VariationalELBOMF
 
 # We obtain the high fidelity dataset and dataloader
 
@@ -17,8 +17,8 @@ np.random.seed(0)
 num_inputs_high_fidelity = 10
 num_inputs_low_fidelity = 50
 
-num_epochs_1 = 5000
-num_epochs_2 = 15000
+num_epochs_1 = 2000
+num_epochs_2 = 4000
 batch_size = num_inputs_low_fidelity + num_inputs_high_fidelity
 
 upper_limit = 1.0
@@ -69,7 +69,7 @@ all_fidelities_train_loader  = DataLoader(all_fidelities_train_dataset, batch_si
 
 # We create the objects for the mfdgp model and the approximate marginal log likelihood of the mfdgp
 
-model = DeepGPMultifidelity(x_train, y_train, fid, num_fidelities = 2)
+model = MFDGP(x_train, y_train, fid, num_fidelities = 2)
 model.double()
 elbo = VariationalELBOMF(model, x_train.shape[-2], 2)
 

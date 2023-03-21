@@ -9,12 +9,16 @@ old/
 pstats/
 R_test/
 build/
+.ipynb_checkpoints/
 
 # Files
 *.pyc
 *.egg
+*_pr.*
 *_old.py
+*_old.ipynb
 *.pstats
 *.png
 *.lprof
+*.dat
 

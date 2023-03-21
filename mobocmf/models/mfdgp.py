@@ -1,39 +1,45 @@
-import torch
-from gpytorch.models.deep_gps import DeepGP
-from gpytorch.likelihoods import GaussianLikelihood
-from mobocmf.layers.MFDGPHiddenLayer import MFDGPHiddenLayer
-from gpytorch.constraints import GreaterThan
 import numpy as np
+import torch
 
-class DeepGPMultifidelity(DeepGP):
+from gpytorch.models.deep_gps import DeepGP
+from gpytorch.likelihoods import GaussianLikelihood, FixedNoiseGaussianLikelihood # Usar FixedNoiseGaussianLikelihood para incljuir los puntos de la frontera
+from gpytorch.constraints import GreaterThan
+
+from mobocmf.layers.mfdgp_hidden_layer import MFDGPHiddenLayer
+
+class MFDGP(DeepGP):
 
     def __init__(self, x_train, y_train, fidelities, num_fidelities):
 
         hidden_layers = []
 
         self.input_dims = x_train.shape[ -1 ]
-        y_high_std = np.std(y_train[ fidelities == num_fidelities - 1 ].numpy())
+        y_high_std = np.std(y_train[ (fidelities == num_fidelities - 1).flatten() ].numpy())
 
-        for i in range(num_fidelities):
-            if i == 0:
+        # We set the inducing_points to the observations in the first layer
 
-                # We set the inducing_points to the observations in the first layer
+        to_sel = (fidelities == 0).flatten()
+        inducing_points = x_train[ to_sel, : ]
+        inducing_values = y_train[ to_sel, : ].flatten()
+        hidden_layers.append(MFDGPHiddenLayer(input_dims=self.input_dims,
+                                                num_layer=0,
+                                                inducing_points=inducing_points,
+                                                inducing_values=inducing_values,
+                                                num_fidelities=num_fidelities))
 
-                to_sel = (fidelities == 0).flatten()
-                inducing_points = torch.from_numpy(x_train.numpy()[ to_sel, : ])
-                inducing_values = torch.from_numpy(y_train.numpy()[ to_sel, : ].flatten())
-                hidden_layers.append(MFDGPHiddenLayer(input_dims=self.input_dims, num_layer=i, inducing_points=inducing_points, \
-                    inducing_values = inducing_values, num_fidelities = num_fidelities))
-            else:
+        for i in range(1, num_fidelities):
 
-                # We set the inducing_points to the observations of the previous fidelity in later layers. We take odd observatios!!!
+            # We set the inducing_points to the observations of the previous fidelity in later layers. We take only odd observatios!!!
 
-                to_sel = (fidelities == i - 1).flatten()
-                inducing_points = torch.from_numpy(np.hstack((x_train.numpy()[ to_sel, : ][::2], (y_train.numpy()[ to_sel, : ][::2]))))
-                inducing_values = torch.from_numpy(y_train.numpy()[ to_sel, : ][::2].flatten()) * 0.0
-                hidden_layers.append(MFDGPHiddenLayer(input_dims=self.input_dims + 1, num_layer=i, \
-                    inducing_points=inducing_points, inducing_values = inducing_values, num_fidelities = num_fidelities, \
-                    y_high_std = np.std(y_train.numpy()[ fidelities == num_fidelities - 1 ])))
+            to_sel = (fidelities == i - 1).flatten()
+            inducing_points = torch.cat((x_train[ to_sel, : ][::2], y_train[ to_sel, : ][::2]), 1)
+            inducing_values = y_train[ to_sel, : ][::2].flatten() * 0.0
+            hidden_layers.append(MFDGPHiddenLayer(input_dims=self.input_dims + 1,
+                                                  num_layer=i,
+                                                  inducing_points=inducing_points,
+                                                  inducing_values=inducing_values,
+                                                  num_fidelities=num_fidelities,
+                                                  y_high_std=y_high_std))
 
         super().__init__()
 
@@ -66,9 +72,9 @@ class DeepGPMultifidelity(DeepGP):
             hidden_layer = getattr(self, self.name_hidden_layer + str(i))
 
             if i == 0:
-                output_layer = hidden_layer(inputs) 
+                output_layer = hidden_layer(inputs)
             else:
-                output_layer = hidden_layer(inputs, output_layer) 
+                output_layer = hidden_layer(inputs, output_layer)
 
             l_outputs[ i ] = output_layer
 
@@ -84,7 +90,7 @@ class DeepGPMultifidelity(DeepGP):
             hidden_layer = getattr(self, self.name_hidden_layer + str(i))
             hidden_layer.variational_strategy._variational_distribution.chol_variational_covar.requires_grad = not value
 
-    def predict(self, test_x, fidelity_layer = 0):
+    def predict(self, test_x, fidelity_layer=0):
 
         # Computes a sample from the predictive distribution calling propagate in the model
         # Note: in a DeepGP call calls eventually the forward method. See gpytorch code.

@@ -4,11 +4,11 @@ import torch
 import gpytorch
 import matplotlib.pyplot as plt
 from torch.utils.data import TensorDataset, DataLoader
-from mobocmf.models.ExactGPModel import ExactGPModel
+from mobocmf.models.exact_gp import ExactGPModel
 from mobocmf.test_functions.forrester import forrester_mf1, forrester_mf0
 from mobocmf.test_functions.non_linear_sin import non_linear_sin_mf1, non_linear_sin_mf0
-from mobocmf.models.DeepGPMultifidelity import DeepGPMultifidelity
-from mobocmf.mlls.VariationalELBOMF import VariationalELBOMF
+from mobocmf.models.mfdgp import MFDGP
+from mobocmf.mlls.variational_elbo_mf import VariationalELBOMF
 
 # We obtain the high fidelity dataset and dataloader
 
@@ -18,7 +18,7 @@ num_inputs_high_fidelity = 4
 num_inputs_low_fidelity = 12
 
 num_epochs_1 = 5000
-num_epochs_2 = 15000
+num_epochs_2 = 10000
 batch_size = num_inputs_low_fidelity + num_inputs_high_fidelity
 
 upper_limit = 1.0
@@ -69,7 +69,7 @@ all_fidelities_train_loader  = DataLoader(all_fidelities_train_dataset, batch_si
 
 # We create the objects for the mfdgp model and the approximate marginal log likelihood of the mfdgp
 
-model = DeepGPMultifidelity(x_train, y_train, fid, num_fidelities = 2)
+model = MFDGP(x_train, y_train, fid, num_fidelities = 2)
 model.double() # We use double precission to avoid numerical problems
 elbo = VariationalELBOMF(model, x_train.shape[-2], 2)
 
@@ -108,7 +108,7 @@ for i in range(num_epochs_2):
         with gpytorch.settings.num_likelihood_samples(1):
             optimizer.zero_grad() 
             output = model(x_batch)
-            loss = -elbo(output, y_batch.T, fidelities)
+            loss = -elbo(output, y_batch.T, fidelities) # sumar a este loss la loss de cada modelo mfdgp asociada a X*
             loss.backward()                
             optimizer.step() 
             loss_iter += loss
@@ -143,7 +143,7 @@ pred_std_low = np.std(samples, 0) * y_low_std
 
 # We fit a standard GP Model
 
-training_iter = 1000
+training_iter = 10
 likelihood = gpytorch.likelihoods.GaussianLikelihood()
 likelihood.noise = 1e-3
 gp_model = ExactGPModel(x_train_high, y_train_high.T, likelihood)
@@ -188,7 +188,7 @@ line.set_label('Observed Data high fidelity')
 
 line, = ax.plot(test_inputs.numpy(), pred_mean_high, 'g-')
 line.set_label('Predictive distribution MFDGP High Fidelity')
-line = ax.fill_between(test_inputs.numpy()[:,0], (pred_mean_high + pred_std_high), \
+line = ax.fill_between(test_inputs.numpy()[ : , 0 ], (pred_mean_high + pred_std_high), \
     (pred_mean_high - pred_std_high), color="green", alpha=0.5)
 line.set_label('Confidence MFDGP High Fidelity')
 
@@ -207,11 +207,11 @@ line.set_label('Confidence GP High Fidelity')
 # We sample from the MFDG and plot the samples (five samples are generated from each fidelity)
 
 for i in range(5):
-        samples = model.sample_function_from_each_layer()
-        line, = ax.plot(test_inputs.numpy(), samples[ 0 ](test_inputs.numpy()) * y_low_std + y_low_mean, '-', color = "gray")
-        line, = ax.plot(test_inputs.numpy(), samples[ 1 ](test_inputs.numpy()) * y_high_std + y_high_mean, '-', color = "gray")
+    samples = model.sample_function_from_each_layer()
+    line, = ax.plot(test_inputs.numpy(), samples[ 0 ](test_inputs.numpy()) * y_low_std + y_low_mean, '-', color = "gray")
+    line, = ax.plot(test_inputs.numpy(), samples[ 1 ](test_inputs.numpy()) * y_high_std + y_high_mean, '-', color = "gray")
 
 ax.legend()
 plt.show()
-
+print()
 import pdb; pdb.set_trace()

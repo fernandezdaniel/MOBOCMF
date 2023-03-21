@@ -6,7 +6,7 @@ import numpy as np
 
 class VariationalELBOMF(VariationalELBO):
 
-    # The constructor is the same as _ApproximateMarginalLogLikelihood, but the likelihood shoulb be none since we have several
+    # The constructor is the same as _ApproximateMarginalLogLikelihood, but the likelihood should be none since we have several
     # likelhoods, one per layer.
 
     # num_data should be the total number of points
