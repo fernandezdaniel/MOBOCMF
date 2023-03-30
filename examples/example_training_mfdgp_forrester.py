@@ -105,7 +105,7 @@ blackbox_mfdgp_fitter.initialize_mfdgp(x_train, con1_train, fidelities, is_const
 ##########################################################################################################
 # Unconditioned training
 
-# blackbox_mfdgp_fitter.train_mfdgps()
+blackbox_mfdgp_fitter.train_mfdgps()
 
 def compute_moments_mfdgp(mfdgp, inputs, mean, std, fidelity, num_samples=100):
 
@@ -247,10 +247,14 @@ import dill as pickle
 # with open("blackbox_mfdgp_fitter_uncond.dat", "wb") as fw:
 #     pickle.dump(blackbox_mfdgp_fitter, fw)
 
-with open("blackbox_mfdgp_fitter_uncond.dat", "rb") as fr:
-    blackbox_mfdgp_fitter = pickle.load(fr)
+# with open("blackbox_mfdgp_fitter_uncond.dat", "rb") as fr:
+#     blackbox_mfdgp_fitter = pickle.load(fr)
 
 pareto_set, pareto_front = blackbox_mfdgp_fitter.get_pareto_solution()
+# pareto_set, pareto_front, pareto_front_cons = blackbox_mfdgp_fitter.get_pareto_solution()
+
+
+
 
 
 blackbox_mfdgp_fitter.train_conditioned_mfdgps() #, l_objs_pred_means, l_cons_pred_means) #, l_objs_pred_stds, l_cons_pred_stds)

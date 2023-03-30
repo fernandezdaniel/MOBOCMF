@@ -21,9 +21,11 @@ class VariationalELBOMF(VariationalELBO):
     # The forward method should receive the predictive distribution for the point, the target, and the corresponding fidelity
     # Call is a method that calls forward
 
-    def forward(self, l_approximate_dist_f, target, fidelities):
+    def forward(self, l_approximate_dist_f, target, fidelities, num_data=None):
 
         assert target.shape[ 0 ] <= target.shape[ 1 ]   # This checks that the target has the proper shape
+
+        num_data = self.num_data if num_data is None else num_data
 
         num_batch = target.shape[ 1 ]
         data_term = 0.0
@@ -38,6 +40,6 @@ class VariationalELBOMF(VariationalELBO):
 
         # We return elbo per batch
 
-        return data_term - kl_divergence * num_batch / self.num_data 
+        return data_term * (num_data / num_batch) - kl_divergence
 
 

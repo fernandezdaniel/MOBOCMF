@@ -168,8 +168,11 @@ class BlackBoxMFDGPFitter():
                                 pareto_set_size=self.pareto_set_size)
 
         self.pareto_set, self.pareto_front = global_optimizer.compute_pareto_solution_from_samples(inputs)
+        # self.pareto_set, self.pareto_front, self.pareto_front_cons = global_optimizer.compute_pareto_solution_from_samples(inputs)
 
-        return self.pareto_set, self.pareto_front
+        self.pareto_fidelities = torch.ones(size=(self.pareto_front.shape[ 0 ], 1)) * (self.num_fidelities - 1)
+
+        return self.pareto_set, self.pareto_front #, self.pareto_front_cons
 
     def loss_theta_factors(self, cs_mean, cs_var):
 
@@ -212,45 +215,35 @@ class BlackBoxMFDGPFitter():
 
             print("Epoch:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item())
 
-    def train_conditioned_mfdgps(self):
+    def train_conditioned_mfdgps(self): # Proesar por separado los puntos de pareto (en todas las iteraciones se procesan)
 
-        # Comprobar que se construye el train_loader correctamente
-        self.pareto_fidelities = torch.ones(size=(self.pareto_front.shape[ 0 ], 1)) * (self.num_fidelities - 1)
+        x_data = self.mfdgp_handlers_objs[ 0 ].train_dataset.tensors[ 0 ] + 0.0
+        y_data = self.mfdgp_handlers_objs[ 0 ].train_dataset.tensors[ 1 ] + 0.0
+        fidelities = self.mfdgp_handlers_objs[ 0 ].train_dataset.tensors[ 2 ] + 0.0
 
-        handler_objs_0 = self.mfdgp_handlers_objs[ 0 ]
-        x_data = torch.cat((self.pareto_set, handler_objs_0.train_dataset.tensors[ 0 ]), 0)
-        y_data = torch.tensor([], dtype=torch.double)
-        fidelities = torch.cat((self.pareto_fidelities, handler_objs_0.train_dataset.tensors[ 2 ]), 0)
+        for handler_objs in self.mfdgp_handlers_objs[ 1 : ]:
 
-        m_pareto_pts = torch.cat((self.pareto_fidelities, torch.zeros(size=handler_objs_0.train_dataset.tensors[ 2 ].shape)), 0)
-        m_pareto_pts = m_pareto_pts > 0
-
-        for handler_cons in self.mfdgp_handlers_objs:
-
-            y_data = torch.cat((y_data, handler_cons.train_dataset.tensors[ 1 ]), 1)
+            y_data = torch.cat((y_data, handler_objs.train_dataset.tensors[ 1 ]), 1)
 
         for handler_cons in self.mfdgp_handlers_cons:
 
             y_data = torch.cat((y_data, handler_cons.train_dataset.tensors[ 1 ]), 1)
-
-        pareto_front_and_cons = torch.cat((self.pareto_front, torch.ones(size=(self.pareto_front.shape[ 0 ], self.num_con))), 1)
-        y_data = torch.cat((pareto_front_and_cons, y_data), 0)
         
-        self.train_dataset = TensorDataset(x_data, y_data, fidelities, m_pareto_pts)
+        self.train_dataset = TensorDataset(x_data, y_data, fidelities)
         self.train_loader  = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
 
         def _update_conditioned_models(handlers_objs, handlers_cons, optimizer):
 
             loss_iter = 0.0
             
-            for (x_batch, ys_batch, fidelities, m_pareto_pts) in self.train_loader:
+            for (x_batch, ys_batch, fidelities_batch) in self.train_loader:
+
+                x_batch_and_pareto = torch.cat((self.pareto_set, x_batch), 0)
+                fidelities_batch_and_pareto = torch.cat((self.pareto_fidelities, fidelities_batch), 0)
 
                 # Samplear el x' de manera uniforme para cada minibatch
                 x_tilde = torch.rand(size=((x_batch.shape[ 0 ], self.pareto_set.shape[ 1 ]))).double() # sampling: x_batch_pints * x_dim
                 # x_tilde = torch.cat((x_tilde, x_batch[ ~m_pareto_pts, None ]), 0) # DFS: ¿Incluimos las observaciones en x_tilde o no?
-
-                x_batch_pareto = x_batch[ m_pareto_pts, None ]
-                x_batch_obs = x_batch[ ~m_pareto_pts, None ]
 
                 loss = 0.0
                 optimizer.zero_grad()
@@ -267,10 +260,10 @@ class BlackBoxMFDGPFitter():
 
                     for i, handler_objs in enumerate(handlers_objs):
 
-                        y_batch = ys_batch[ None, : , i ]
+                        y_batch_and_pareto = torch.cat((self.pareto_front[ None, : , i ], ys_batch[ None, : , i ]), 1)
 
-                        output = handler_objs.mfdgp(x_batch) # We pass the data through the DGP to obtain the predictions
-                        loss += -handler_objs.elbo(output, y_batch, fidelities)
+                        output = handler_objs.mfdgp(x_batch_and_pareto) # We pass the data through the DGP to obtain the predictions
+                        loss += -handler_objs.elbo(output, y_batch_and_pareto, fidelities_batch_and_pareto, num_data=y_batch_and_pareto.shape[ 1 ]) # / y_batch_and_pareto.shape[ 1 ]
                         
                         output_f_x_tilde = handler_objs.mfdgp(x_tilde)[ self.num_fidelities - 1 ]
                         mean_f_x_tilde, var_f_x_tilde = output_f_x_tilde.mean, output_f_x_tilde.variance
@@ -279,32 +272,34 @@ class BlackBoxMFDGPFitter():
                         vars_f_x_tilde = torch.cat((vars_f_x_tilde, var_f_x_tilde[None, :]), 0)
 
                     for i, handler_cons in enumerate(handlers_cons):
+
+                        y_batch = ys_batch[ None, : , i + self.num_obj ]
+
+                        # We process x_batch points (observations and pareto set points)
+                        output = handler_cons.mfdgp(x_batch) # We pass the data through the DGP to obtain the predictions
+                        loss = -handler_cons.elbo(output, y_batch, fidelities_batch, num_data=y_batch.shape[ 1 ]) # / y_batch.shape[ 1 ]
+
+                        # y_batch_and_pareto = torch.cat((self.pareto_front_cons[ None, : , i ], ys_batch[ None, : , i + self.num_obj ]), 1)
                         
-                        if torch.any(~m_pareto_pts):
-                            y_batch_obs = ys_batch[ None, ~m_pareto_pts[ : , 0 ], i + self.num_obj ]
-                            fidelities_obs = fidelities[ ~m_pareto_pts[ : , 0 ] ]
+                        # output = handler_cons.mfdgp(x_batch_and_pareto) # We pass the data through the DGP to obtain the predictions
+                        # loss += -handler_cons.elbo(output, y_batch_and_pareto, fidelities_batch_and_pareto)
 
-                            output_obs = handler_cons.mfdgp(x_batch_obs) # We pass the data through the DGP to obtain the predictions
-                            loss += -handler_cons.elbo(output_obs, y_batch_obs, fidelities_obs)
+                        # We get the mean and variance for the theta factors 
+                        output_c_pareto = handler_cons.mfdgp(self.pareto_set)[ self.num_fidelities - 1 ]
+                        mean_c_pareto, var_c_pareto = output_c_pareto.mean, output_c_pareto.variance
+                        means_c_pareto = torch.cat((means_c_pareto, mean_c_pareto[None, :]), 0)
+                        vars_c_pareto = torch.cat((vars_c_pareto, var_c_pareto[None, :]), 0)
 
-                        if torch.any(m_pareto_pts):
-                            output_c_pareto = handler_cons.mfdgp(x_batch_pareto)[ self.num_fidelities - 1 ] # We pass the data through the DGP to obtain the predictions
-                            mean_c_pareto, var_c_pareto = output_c_pareto.mean, output_c_pareto.variance
-
-                            means_c_pareto = torch.cat((means_c_pareto, mean_c_pareto[None, :]), 0)
-                            vars_c_pareto = torch.cat((vars_c_pareto, var_c_pareto[None, :]), 0)
-
+                        # We get the mean and variance for the omega factors
                         output_c_x_tilde = handler_cons.mfdgp(x_tilde)[ self.num_fidelities - 1 ] # We pass the data through the DGP to obtain the predictions
                         mean_c_x_tilde, var_c_x_tilde = output_c_x_tilde.mean, output_c_x_tilde.variance
-
                         means_c_x_tilde = torch.cat((means_c_x_tilde, mean_c_x_tilde[None, :]), 0)
                         vars_c_x_tilde = torch.cat((vars_c_x_tilde, var_c_x_tilde[None, :]), 0)
 
+                    loss += -self.loss_theta_factors(means_c_pareto, vars_c_pareto) #/ means_c_pareto.shape[ 1 ] # Factores de las restricciones para que los puntos de la frontera cumplan las restricciones
 
-                    loss += self.loss_theta_factors(means_c_pareto, vars_c_pareto) # Factores de las restricciones para que los puntos de la frontera cumplan las restricciones
-
-                    loss += self.loss_omega_factors(means_f_x_tilde, vars_f_x_tilde, means_c_x_tilde, vars_c_x_tilde, self.pareto_front)  # Factores omega para que el resto de puntos del espacio sean ajustados para que tengan coherencia con la frontera
-
+                    loss += -self.loss_omega_factors(means_f_x_tilde, vars_f_x_tilde, means_c_x_tilde, vars_c_x_tilde, self.pareto_front) #/ means_f_x_tilde.shape[ 1 ]  # Factores omega para que el resto de puntos del espacio sean ajustados para que tengan coherencia con la frontera
+                    
                     loss.backward()
                     optimizer.step()
                     loss_iter += loss
