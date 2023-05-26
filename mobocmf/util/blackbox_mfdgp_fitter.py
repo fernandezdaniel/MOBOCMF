@@ -104,15 +104,13 @@ class BlackBoxMFDGPFitter():
 
         for handler_obj in self.mfdgp_handlers_objs.values():
 
-            # handler_obj.mfdgp.fix_variational_hypers(fix_variational_hypers)
-            handler_obj.mfdgp.fix_params(fix_variational_hypers)
+            handler_obj.mfdgp.fix_variational_hypers(fix_variational_hypers)
 
             l_opt_objs.append(torch.optim.Adam([ {'params': handler_obj.mfdgp.parameters()} ], lr=lr))
 
         for handler_con in self.mfdgp_handlers_cons.values():
 
-            # handler_con.mfdgp.fix_variational_hypers(fix_variational_hypers)
-            handler_con.mfdgp.fix_params(fix_variational_hypers)
+            handler_con.mfdgp.fix_variational_hypers(fix_variational_hypers)
 
             l_opt_cons.append(torch.optim.Adam([ {'params': handler_con.mfdgp.parameters()} ], lr=lr)) # Pasara qui los aprametros de todos los mdoelos (para el loss general)
 
@@ -205,29 +203,29 @@ class BlackBoxMFDGPFitter():
         return torch.sum(np.log(1.0 - self.eps) * cdf_gamma_c_times_cdf_gamma_f_star
                          + np.log(self.eps) * (1.0 - cdf_gamma_c_times_cdf_gamma_f_star))
 
-    def _train_conditioned_mfdgps(self, func_update_model, fix_variational_hypers, num_epochs, lr):
+    def _train_conditioned_mfdgps(self, func_update_model, fix_variational_hypers, num_iters, lr):
 
         params = list()
 
         for handler_obj in self.mfdgp_handlers_objs.values():
             
             # handler_obj.mfdgp.fix_variational_hypers(fix_variational_hypers)
-            handler_obj.mfdgp.fix_params(fix_variational_hypers)
+            handler_obj.mfdgp.fix_variational_hypers_cond(fix_variational_hypers)
             params = params + list(handler_obj.mfdgp.parameters())
 
         for handler_con in self.mfdgp_handlers_cons.values():
             
             # handler_con.mfdgp.fix_variational_hypers(fix_variational_hypers)
-            handler_con.mfdgp.fix_params(fix_variational_hypers)
+            handler_con.mfdgp.fix_variational_hypers_cond(fix_variational_hypers)
             params = params + list(handler_con.mfdgp.parameters())
 
         optimizer = torch.optim.Adam([ {'params': params } ], lr=lr)
 
-        for i in range(num_epochs):
+        for i in range(num_iters):
 
             loss_iter = func_update_model(self.mfdgp_handlers_objs.values(), self.mfdgp_handlers_cons.values(), optimizer)
 
-            print("Iter:", i, "/", num_epochs, ". Neg. ELBO per iter:", loss_iter.item())
+            print("Iter:", i, "/", num_iters, ". Neg. ELBO per iter:", loss_iter.item())
 
     def train_conditioned_mfdgps(self):
 
@@ -304,8 +302,8 @@ class BlackBoxMFDGPFitter():
 
             return loss
 
-        self._train_conditioned_mfdgps(_update_conditioned_models, fix_variational_hypers=True, num_epochs=self.num_epochs_1, lr=self.lr_1)
-        self._train_conditioned_mfdgps(_update_conditioned_models, fix_variational_hypers=False, num_epochs=self.num_epochs_2, lr=self.lr_2)
+        self._train_conditioned_mfdgps(_update_conditioned_models, fix_variational_hypers=True, num_iters=self.num_epochs_1, lr=self.lr_1)
+        # self._train_conditioned_mfdgps(_update_conditioned_models, fix_variational_hypers=False, num_iters=self.num_epochs_2, lr=self.lr_2)
 
         for handler_obj in self.mfdgp_handlers_objs.values():
             handler_obj.iter_train_loader = None
@@ -337,4 +335,12 @@ class BlackBoxMFDGPFitter():
         self_copy = deepcopy(self)
 
         return self_copy
+    
 
+    def get_model(self, name: str, is_constraint=False):
+
+        if is_constraint:
+            return self.mfdgp_handlers_cons[ name ].mfdgp
+        
+        return self.mfdgp_handlers_objs[ name ].mfdgp
+    

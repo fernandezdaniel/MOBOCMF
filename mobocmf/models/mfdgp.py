@@ -123,20 +123,17 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
             hidden_layer = getattr(self, self.name_hidden_layer + str(i))
             hidden_layer.variational_strategy._variational_distribution.chol_variational_covar.requires_grad = not value
             
-    def fix_params(self, value): # Cambiar para que se fijen todos los parametros excepto la media y la var del modelo
+    def fix_variational_hypers_cond(self, value): # Cambiar para que se fijen todos los parametros excepto la media y la var del modelo
 
         for i in range(self.num_hidden_layers):
             likelihood = getattr(self, self.name_hidden_layer_likelihood + str(i))
-            likelihood.raw_noise.requires_grad = not value # Esta linea pone a False todas las demas
-            # likelihood.noise.requires_grad = not value
-            # likelihood.raw_noise.requires_grad = not value
-            # likelihood.noise_covar.noise.requires_grad = not value
-            # likelihood.noise_covar.raw_noise.requires_grad = not value
+            likelihood.raw_noise.requires_grad = not value
        
         for i in range(self.num_hidden_layers):
             hidden_layer = getattr(self, self.name_hidden_layer + str(i))
-            hidden_layer.variational_strategy._variational_distribution.variational_mean.requires_grad = not value
-            hidden_layer.variational_strategy._variational_distribution.chol_variational_covar.requires_grad = not value
+
+            for (name, param) in hidden_layer.covar_module.named_parameters():
+                param.requires_grad = not value
 
     def predict(self, test_x, fidelity_layer=0):
 

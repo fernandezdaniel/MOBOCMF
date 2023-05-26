@@ -99,18 +99,15 @@ class JESMOC_MFDGP():
             self.constraints[ n_f ] = {}
 
     def add_blackbox(self, mean, std, fidelity: int, blackbox_name: str, is_constraint=False):
+            
+        mfdgp_uncond = self.blackbox_mfdgp_fitter_uncond.get_model( blackbox_name, is_constraint=is_constraint )
+        mfdgp_cond = self.blackbox_mfdgp_fitter_cond.get_model( blackbox_name, is_constraint=is_constraint )
+
+        jes_mfdgp = _JES_MFDGP(mean, std, fidelity, mfdgp_uncond, mfdgp_cond)
 
         if is_constraint:
-            mfdgp_uncond = self.blackbox_mfdgp_fitter_uncond.mfdgp_handlers_cons[ blackbox_name ].mfdgp
-            mfdgp_cond = self.blackbox_mfdgp_fitter_cond.mfdgp_handlers_cons[ blackbox_name ].mfdgp
-
-            jes_mfdgp = _JES_MFDGP(mean, std, fidelity, mfdgp_uncond, mfdgp_cond)
             self.constraints[ fidelity ][ blackbox_name ] = jes_mfdgp
         else:
-            mfdgp_uncond = self.blackbox_mfdgp_fitter_uncond.mfdgp_handlers_objs[ blackbox_name ].mfdgp
-            mfdgp_cond = self.blackbox_mfdgp_fitter_cond.mfdgp_handlers_objs[ blackbox_name ].mfdgp
-
-            jes_mfdgp = _JES_MFDGP(mean, std, fidelity, mfdgp_uncond, mfdgp_cond)
             self.objectives[ fidelity ][ blackbox_name ] = jes_mfdgp
 
         return jes_mfdgp

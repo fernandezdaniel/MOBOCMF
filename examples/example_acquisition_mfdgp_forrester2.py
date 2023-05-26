@@ -25,7 +25,7 @@ num_inputs_high_fidelity = 3
 num_inputs_low_fidelity = 6
 
 num_epochs_1 = 5000
-num_epochs_2 = 5000
+num_epochs_2 = 15000
 batch_size = num_inputs_low_fidelity + num_inputs_high_fidelity # DFS: Cambiar para ver que pasa cuando el batch no es del numero de datos
 
 lower_limit = 0.0
