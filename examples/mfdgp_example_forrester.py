@@ -17,8 +17,8 @@ np.random.seed(0)
 num_inputs_high_fidelity = 4
 num_inputs_low_fidelity = 12
 
-num_epochs_1 = 5000
-num_epochs_2 = 10000
+num_epochs_1 = 1000
+num_epochs_2 = 1000
 batch_size = num_inputs_low_fidelity + num_inputs_high_fidelity
 
 upper_limit = 1.0

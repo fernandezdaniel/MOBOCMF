@@ -3,8 +3,13 @@ import numpy as np
 import torch
 import scipy.optimize as spo
 
+
 from scipy.spatial import KDTree
 from scipy.spatial.distance import cdist
+
+
+class NotFeasiblePoints(ValueError):
+    pass
 
 class MOOP():
 
@@ -41,7 +46,7 @@ class MOOP():
 
         # We compute the feasible mask of the rest of the constraints and combine all the results
 
-        for i, con_fun in enumerate(constraints[1:]):
+        for i, con_fun in enumerate(constraints[ 1 : ]):
             feasible_region = np.logical_and(feasible_region, con_fun(grid) >= feasible_values[ i ])
 
         if not np.any(feasible_region):
@@ -98,7 +103,7 @@ class MOOP():
 
         def g(x):
             g_func = np.zeros(num_con)
-            for i, constraint_wrapper in enumerate(cons):
+            for i,constraint_wrapper in enumerate(cons):
                 g_func[ i ] = constraint_wrapper(x, gradient=False) - constraint_tol
             return g_func
 
@@ -267,10 +272,5 @@ class MOOP():
         if self.pareto_set_size is not None:
             pareto_set, pareto_front = self.compute_pareto_front_and_set_summary_y_space(pareto_set, pareto_front, self.pareto_set_size)
         
-        # pareto_front_cons = torch.from_numpy(self.samples_cons[ 0 ](pareto_set)[ : , None ])
-        # for con in self.samples_cons[ 1 : ]:
-        #     pareto_front_cons = torch.cat((pareto_front_cons, torch.from_numpy(con(pareto_set)[ : , None ])), 1)
-
-        
-        return torch.from_numpy(pareto_set), torch.from_numpy(pareto_front) #, pareto_front_cons
+        return torch.from_numpy(pareto_set), torch.from_numpy(pareto_front), self.samples_objs
         

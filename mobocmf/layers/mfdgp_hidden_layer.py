@@ -10,17 +10,20 @@ from gpytorch.distributions import MultivariateNormal
 from gpytorch.models.deep_gps import DeepGPLayer
 from gpytorch.lazy import LazyEvaluatedKernelTensor
 
+# from botorch.sampling.normal import SobolQMCNormalSampler
+from botorch.sampling.samplers import SobolQMCNormalSampler
+
 class CovarianceMatrixMF(LazyEvaluatedKernelTensor):
 
     def add_jitter(self, jitter_val = 2e-6):
         return super(LazyEvaluatedKernelTensor, self).add_jitter(jitter_val)
 
-class MFDGPHiddenLayer(DeepGPLayer):
+# necesita el modo_entrenar() y eval(), en el segundo modo llamamos a MC.
+class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana estandar y especificas para cada capa y reusar # Hacer un metodo que sea fixed_sample(x <- del cual generar la muestra) (num_sample, self.num_layer) con samples fijos para la capa, solo tiene que generar un sample
 
     # input_dims is the dimensionality of the attribute vector x that is put into the layer 
 
-    def __init__(self, num_layer, input_dims, inducing_points, inducing_values, num_fidelities, y_high_std = 1.0):
-
+    def __init__(self, num_layer, input_dims, inducing_points, inducing_values, num_fidelities, y_high_std=1.0, num_samples=10):
         self.num_layer = num_layer
         self.input_dims = input_dims
         num_inducing = inducing_points.shape[ 0 ]
@@ -95,6 +98,23 @@ class MFDGPHiddenLayer(DeepGPLayer):
         self.mean_module = ZeroMean()
         self.covar_module = covar_module
 
+        # DFS Parameters for QMC-sampling
+
+        # samples = other_inputs[0].get_base_samples(sample_shape=torch.Size([10])); inp_.rsample(base_samples=samples)
+        # self.sampler = SobolQMCNormalSampler(num_samples=num_QMC_samples, seed=seed_QMC_samples)
+        
+        # self.base_samples_other_inp = get_base_samples(sample_shape=torch.Size([num_QMC_samples]))
+        self.samples = 1.0 #torch.normal(mean=torch.zeros([num_samples]), std=torch.ones([num_samples]))[ : , None ]
+        self.num_samples = num_samples
+        self._eval_mode = False
+
+
+    def train_mode(self):
+        self._eval_mode = False
+    
+    def eval_mode(self):
+        self._eval_mode = True
+
     def forward(self, x): 
 
         # We check that the input is the right one
@@ -104,17 +124,18 @@ class MFDGPHiddenLayer(DeepGPLayer):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
 
-        covar_x.__class__ = CovarianceMatrixMF # This replaces the add_jitter method which uses 1e-3 by default.
+        covar_x.__class__ = CovarianceMatrixMF # This replaces the add_jitter method which uses 2e-6 by default.
 
         return MultivariateNormal(mean_x, covar_x)
 
-    def __call__(self, x, *other_inputs, **kwargs):
+    def __call__(self, x, *other_inputs, **kwargs): # Cambiarlo para usar muestra fijas!! (10 muestras que sean siempre las mismas) Problema: deben aprox la distrib
 
         # This adds extra inputs, if given
 
-        if len(other_inputs):
+        if len(other_inputs): # Layer different of the firstone
 
             if isinstance(x, gpytorch.distributions.MultivariateNormal):
+                raise ValueError
                 x = x.rsample()
 
             processed_inputs = []
@@ -122,7 +143,11 @@ class MFDGPHiddenLayer(DeepGPLayer):
             for inp in other_inputs:
 
                 if isinstance(inp, gpytorch.distributions.MultivariateNormal):
-                    inp = inp.rsample().T
+                    # inp = inp.rsample().T
+                    if self._eval_mode:
+                        inp = torch.reshape(inp.mean + torch.sqrt(inp.variance) * self.samples, x.shape)
+                    else:
+                        inp = inp.rsample().T
 
                 processed_inputs.append(inp)
 

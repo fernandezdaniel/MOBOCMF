@@ -3,9 +3,12 @@ import torch
 import gpytorch
 import matplotlib.pyplot as plt
 
+import dill as pickle
+
 from mobocmf.test_functions.forrester import forrester_mf1, forrester_mf0
 from mobocmf.test_functions.non_linear_sin import non_linear_sin_mf1, non_linear_sin_mf0
 from mobocmf.util.blackbox_mfdgp_fitter import BlackBoxMFDGPFitter
+from mobocmf.acquisition_functions.JESMOC_MFDGP import JESMOC_MFDGP
 
 input_dims = 1
 
@@ -21,8 +24,8 @@ num_fidelities = 2
 num_inputs_high_fidelity = 3
 num_inputs_low_fidelity = 6
 
-num_epochs_1 = 2
-num_epochs_2 = 2
+num_epochs_1 = 1000
+num_epochs_2 = 1000
 batch_size = num_inputs_low_fidelity + num_inputs_high_fidelity # DFS: Cambiar para ver que pasa cuando el batch no es del numero de datos
 
 lower_limit = 0.0
@@ -47,7 +50,7 @@ con1_mf0 = func_con1_mf0(x_mf0)
 # We obtain x and ys for the high fidelity 
 
 upper_limit_high_fidelity = (upper_limit - lower_limit) * 0.7 + lower_limit
-x_mf1 = np.array([0.1, 0.5, 0.9]).reshape((num_inputs_high_fidelity, 1))
+x_mf1 = np.array([0.1, 0.3, 0.6]).reshape((num_inputs_high_fidelity, 1))
 obj1_mf1 = func_obj1_mf1(x_mf1)
 obj2_mf1 = func_obj2_mf1(x_mf1)
 con1_mf1 = func_con1_mf1(x_mf1)
@@ -100,29 +103,38 @@ blackbox_mfdgp_fitter.initialize_mfdgp(x_train, obj1_train, fidelities, "obj1", 
 blackbox_mfdgp_fitter.initialize_mfdgp(x_train, obj2_train, fidelities, "obj2", is_constraint=False)
 blackbox_mfdgp_fitter.initialize_mfdgp(x_train, con1_train, fidelities, "con1", threshold_constraint=threshold_constraint, is_constraint=True)
 
-
-##########################################################################################################
+##################################################################################################
 # Unconditioned training
-
 blackbox_mfdgp_fitter.train_mfdgps()
 
-def compute_moments_mfdgp_old(mfdgp, inputs, mean, std, fidelity, num_samples=1000):
+with open("blackbox_mfdgp_fitters/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "wb") as fw:
+    pickle.dump(blackbox_mfdgp_fitter, fw)
 
-    samples = np.zeros((num_samples, inputs.shape[ 0 ]))
+with open("blackbox_mfdgp_fitters/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "rb") as fr:
+    blackbox_mfdgp_fitter = pickle.load(fr)
+# ##################################################################################################
 
-    with gpytorch.settings.num_likelihood_samples(1): 
-        ret = mfdgp.hidden_layer_1(torch.from_numpy(np.hstack((spacing[:,0:1], spacing[:,0:1]))))
+# # num_epochs_1 = 2
+# # num_epochs_2 = 2
 
-    for i in range(num_samples):
-        with gpytorch.settings.num_likelihood_samples(1):
-            pred_means, pred_variances = mfdgp.predict(inputs, fidelity) #_for_acquisition(inputs, fidelity)
-            samples[ i : (i + 1), : ] = np.random.normal(size = pred_means.numpy().shape) * \
-                    np.sqrt(pred_variances.numpy()) + pred_means.numpy()
+# # blackbox_mfdgp_fitter.num_epochs_1 = num_epochs_1
+# # blackbox_mfdgp_fitter.num_epochs_2 = num_epochs_2
 
-    pred_mean = np.mean(samples, 0) * std + mean
-    pred_std  = np.std(samples, 0) * std
+jesmoc_mfdgp = JESMOC_MFDGP(model=blackbox_mfdgp_fitter, num_fidelities=num_fidelities)
+jesmoc_mfdgp.add_blackbox(obj1_mean_mf0, obj1_std_mf0, 0, "obj1", is_constraint=False)
+jesmoc_mfdgp.add_blackbox(obj1_mean_mf1, obj1_std_mf1, 1, "obj1", is_constraint=False)
 
-    return pred_mean, pred_std
+jesmoc_mfdgp.add_blackbox(obj1_mean_mf0, obj1_std_mf0, 0, "obj2", is_constraint=False)
+jesmoc_mfdgp.add_blackbox(obj1_mean_mf1, obj1_std_mf1, 1, "obj2", is_constraint=False)
+
+jesmoc_mfdgp.add_blackbox(con1_mean_mf0, con1_std_mf0, 0, "con1", is_constraint=True)
+jesmoc_mfdgp.add_blackbox(con1_mean_mf1, con1_std_mf1, 1, "con1", is_constraint=True)
+
+with open("blackbox_mfdgp_fitters/jesmoc_mfdgp_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "wb") as fw:
+    pickle.dump(jesmoc_mfdgp, fw)
+
+with open("blackbox_mfdgp_fitters/jesmoc_mfdgp_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "rb") as fr:
+    jesmoc_mfdgp = pickle.load(fr)
 
 def compute_moments_mfdgp(mfdgp, inputs, mean, std, fidelity):
 
@@ -135,6 +147,7 @@ def compute_moments_mfdgp(mfdgp, inputs, mean, std, fidelity):
     return pred_mean.numpy()[ 0 ], pred_std.numpy()[ 0 ]
 
 def plot_black_box(inputs,
+                   figname, iters_1, iters_2,
                    func_mf0, func_mf1,
                    x_mf0, x_mf1,
                    mean_mf0, mean_mf1,
@@ -148,7 +161,7 @@ def plot_black_box(inputs,
     # We plot the model
 
     spacing = np.linspace(lower_limit, upper_limit, 1000)[:, None]
-    _, ax = plt.subplots(1, 1, figsize=(16, 12))
+    _, ax = plt.subplots(1, 1, figsize=(18, 12))
     ax.plot(spacing, func_mf0(spacing), "b--", label="Low fidelity")
     ax.plot(spacing, func_mf1(spacing), "r--", label="High fidelity")
 
@@ -164,7 +177,7 @@ def plot_black_box(inputs,
     line.set_label('Observed Data high fidelity')
 
     line, = ax.plot(inputs.numpy(), pred_mean_mf1, 'g-')
-    line.set_label('Predictive distribution MFDGP High Fidelity')
+    line.set_label('Aquisition')
     line = ax.fill_between(inputs.numpy()[:,0], (pred_mean_mf1 + pred_std_mf1), (pred_mean_mf1 - pred_std_mf1), color="green", alpha=0.5)
     line.set_label('Confidence MFDGP High Fidelity')
 
@@ -174,12 +187,18 @@ def plot_black_box(inputs,
     line.set_label('Confidence MFDGP Low Fidelity')
 
     plt.legend()
-    plt.show()
 
-NUM_SAMPLES = 50
+    figname = figname.replace("iters1", str(iters_1))
+    figname = figname.replace("iters2", str(iters_2))
+    plt.savefig("/home/lering/Descargas/IMG_DGPMF/6xmf0_3xmf1/using_predict_for_acq/" + figname + ".png", format='png', dpi=100)
+    plt.close()
 
 spacing = torch.linspace(lower_limit, upper_limit, 200).double()[ : , None ] # torch.rand(size=(1000,)).double() # torch.rand(size=(1000, input_dims)).double() # Samplear de manera unif tal como se hacia en Spearmint y hacerlo para cada batch
 
+##################################################################################################
+##################################################################################################
+# Plots of the Unconditioned distrib
+blackbox_mfdgp_fitter = jesmoc_mfdgp.blackbox_mfdgp_fitter_uncond
 
 mfdgp = blackbox_mfdgp_fitter.mfdgp_handlers_objs[ "obj1" ].mfdgp
 
@@ -191,17 +210,9 @@ obj1_pred_mean_mf1, obj1_pred_std_mf1 = compute_moments_mfdgp(mfdgp, spacing,
                                                               obj1_mean_mf1, obj1_std_mf1,
                                                               fidelity=1)
 mfdgp.train()
-# DFS: It is necesary to undo the eval mode and set it again because the model stores the shape of the cholesky computation, so it fails if the inputs do not have the same shape
-mfdgp.eval()
-obj1_pred_mean_mf0_old, obj1_pred_std_mf0_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              obj1_mean_mf0, obj1_std_mf0,
-                                                              fidelity=0, num_samples=NUM_SAMPLES)
-obj1_pred_mean_mf1_old, obj1_pred_std_mf1_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              obj1_mean_mf1, obj1_std_mf1,
-                                                              fidelity=1, num_samples=NUM_SAMPLES)
-mfdgp.train()
 
 plot_black_box(spacing,
+               "obj1_mfdgp_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
                func_obj1_mf0,  func_obj1_mf1,
                x_mf0, x_mf1,
                obj1_mean_mf0,  obj1_mean_mf1,
@@ -209,16 +220,6 @@ plot_black_box(spacing,
                obj1_train_mf0, obj1_train_mf1,
                obj1_pred_mean_mf0, obj1_pred_mean_mf1,
                obj1_pred_std_mf0,  obj1_pred_std_mf1,
-               lower_limit, upper_limit)
-
-plot_black_box(spacing,
-               func_obj1_mf0,  func_obj1_mf1,
-               x_mf0, x_mf1,
-               obj1_mean_mf0,  obj1_mean_mf1,
-               obj1_std_mf0,   obj1_std_mf1,
-               obj1_train_mf0, obj1_train_mf1,
-               obj1_pred_mean_mf0_old, obj1_pred_mean_mf1_old,
-               obj1_pred_std_mf0_old,  obj1_pred_std_mf1_old,
                lower_limit, upper_limit)
 
 
@@ -233,16 +234,8 @@ obj2_pred_mean_mf1, obj2_pred_std_mf1 = compute_moments_mfdgp(mfdgp, spacing,
                                                               fidelity=1)
 mfdgp.train()
 
-mfdgp.eval()
-obj2_pred_mean_mf0_old, obj2_pred_std_mf0_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              obj2_mean_mf0, obj2_std_mf0,
-                                                              fidelity=0, num_samples=NUM_SAMPLES)
-obj2_pred_mean_mf1_old, obj2_pred_std_mf1_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              obj2_mean_mf1, obj2_std_mf1,
-                                                              fidelity=1, num_samples=NUM_SAMPLES)
-mfdgp.train()
-
 plot_black_box(spacing,
+               "obj2_mfdgp_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
                func_obj2_mf0,  func_obj2_mf1,
                x_mf0, x_mf1,
                obj2_mean_mf0,  obj2_mean_mf1,
@@ -250,16 +243,6 @@ plot_black_box(spacing,
                obj2_train_mf0, obj2_train_mf1,
                obj2_pred_mean_mf0, obj2_pred_mean_mf1,
                obj2_pred_std_mf0,  obj2_pred_std_mf1,
-               lower_limit, upper_limit)
-
-plot_black_box(spacing,
-               func_obj2_mf0,  func_obj2_mf1,
-               x_mf0, x_mf1,
-               obj2_mean_mf0,  obj2_mean_mf1,
-               obj2_std_mf0,   obj2_std_mf1,
-               obj2_train_mf0, obj2_train_mf1,
-               obj2_pred_mean_mf0_old, obj2_pred_mean_mf1_old,
-               obj2_pred_std_mf0_old,  obj2_pred_std_mf1_old,
                lower_limit, upper_limit)
 
 
@@ -274,16 +257,9 @@ con1_pred_mean_mf1, con1_pred_std_mf1 = compute_moments_mfdgp(mfdgp, spacing,
                                                               fidelity=1)
 mfdgp.train()
 
-mfdgp.eval()
-con1_pred_mean_mf0_old, con1_pred_std_mf0_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              con1_mean_mf0, con1_std_mf0,
-                                                              fidelity=0, num_samples=NUM_SAMPLES)
-con1_pred_mean_mf1_old, con1_pred_std_mf1_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              con1_mean_mf1, con1_std_mf1,
-                                                              fidelity=1, num_samples=NUM_SAMPLES)
-mfdgp.train()
 
 plot_black_box(spacing,
+               "con1_mfdgp_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
                func_con1_mf0,  func_con1_mf1,
                x_mf0, x_mf1,
                con1_mean_mf0,  con1_mean_mf1,
@@ -292,46 +268,15 @@ plot_black_box(spacing,
                con1_pred_mean_mf0, con1_pred_mean_mf1,
                con1_pred_std_mf0,  con1_pred_std_mf1,
                lower_limit, upper_limit)
+##################################################################################################
+##################################################################################################
 
-plot_black_box(spacing,
-               func_con1_mf0,  func_con1_mf1,
-               x_mf0, x_mf1,
-               con1_mean_mf0,  con1_mean_mf1,
-               con1_std_mf0,   con1_std_mf1,
-               con1_train_mf0, con1_train_mf1,
-               con1_pred_mean_mf0_old, con1_pred_mean_mf1_old,
-               con1_pred_std_mf0_old,  con1_pred_std_mf1_old,
-               lower_limit, upper_limit)
+##################################################################################################
+##################################################################################################
+# Plots of the Conditioned distrib
+blackbox_mfdgp_fitter = jesmoc_mfdgp.blackbox_mfdgp_fitter_cond
 
-import copy
-blackbox_mfdgp_fitter_uncond = copy.deepcopy(blackbox_mfdgp_fitter)
-
-##########################################################################################################
-# Conditioned training
-
-import dill as pickle
-
-with open("blackbox_mfdgp_fitters/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "wb") as fw:
-    pickle.dump(blackbox_mfdgp_fitter, fw)
-
-with open("blackbox_mfdgp_fitters/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "rb") as fr:
-    blackbox_mfdgp_fitter = pickle.load(fr)
-
-pareto_set, pareto_front = blackbox_mfdgp_fitter.sample_and_store_pareto_solution()
-# pareto_set, pareto_front = blackbox_mfdgp_fitter.get_pareto_solution()
-# pareto_set, pareto_front, pareto_front_cons = blackbox_mfdgp_fitter.get_pareto_solution()
-
-
-# num_epochs_1 = 2
-# num_epochs_2 = 2
-
-blackbox_mfdgp_fitter.num_epochs_1 = num_epochs_1
-blackbox_mfdgp_fitter.num_epochs_2 = num_epochs_2
-
-blackbox_mfdgp_fitter.train_conditioned_mfdgps() #, l_objs_pred_means, l_cons_pred_means) #, l_objs_pred_stds, l_cons_pred_stds)
-
-
-
+pareto_set, pareto_front = blackbox_mfdgp_fitter.pareto_set, blackbox_mfdgp_fitter.pareto_front
 
 mfdgp = blackbox_mfdgp_fitter.mfdgp_handlers_objs[ "obj1" ].mfdgp
 
@@ -344,16 +289,8 @@ obj1_pred_mean_mf1, obj1_pred_std_mf1 = compute_moments_mfdgp(mfdgp, spacing,
                                                               fidelity=1)
 mfdgp.train()
 
-mfdgp.eval()
-obj1_pred_mean_mf0_old, obj1_pred_std_mf0_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              obj1_mean_mf0, obj1_std_mf0,
-                                                              fidelity=0, num_samples=NUM_SAMPLES)
-obj1_pred_mean_mf1_old, obj1_pred_std_mf1_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              obj1_mean_mf1, obj1_std_mf1,
-                                                              fidelity=1, num_samples=NUM_SAMPLES)
-mfdgp.train()
-
 plot_black_box(spacing,
+               "obj1_mfdgp_cond_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
                func_obj1_mf0,  func_obj1_mf1,
                x_mf0, x_mf1,
                obj1_mean_mf0,  obj1_mean_mf1,
@@ -362,19 +299,7 @@ plot_black_box(spacing,
                obj1_pred_mean_mf0, obj1_pred_mean_mf1,
                obj1_pred_std_mf0,  obj1_pred_std_mf1,
                lower_limit, upper_limit,
-               pareto_set, pareto_front_vals=pareto_front[ : , 0 ])
-
-
-plot_black_box(spacing,
-               func_obj1_mf0,  func_obj1_mf1,
-               x_mf0, x_mf1,
-               obj1_mean_mf0,  obj1_mean_mf1,
-               obj1_std_mf0,   obj1_std_mf1,
-               obj1_train_mf0, obj1_train_mf1,
-               obj1_pred_mean_mf0_old, obj1_pred_mean_mf1_old,
-               obj1_pred_std_mf0_old,  obj1_pred_std_mf1_old,
-               lower_limit, upper_limit,
-               pareto_set, pareto_front_vals=pareto_front[ : , 0 ])
+               pareto_set=pareto_set, pareto_front_vals=pareto_front[ : , 0 ])
 
 
 mfdgp = blackbox_mfdgp_fitter.mfdgp_handlers_objs[ "obj2" ].mfdgp
@@ -388,16 +313,8 @@ obj2_pred_mean_mf1, obj2_pred_std_mf1 = compute_moments_mfdgp(mfdgp, spacing,
                                                               fidelity=1)
 mfdgp.train()
 
-mfdgp.eval()
-obj2_pred_mean_mf0_old, obj2_pred_std_mf0_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              obj2_mean_mf0, obj2_std_mf0,
-                                                              fidelity=0, num_samples=NUM_SAMPLES)
-obj2_pred_mean_mf1_old, obj2_pred_std_mf1_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              obj2_mean_mf1, obj2_std_mf1,
-                                                              fidelity=1, num_samples=NUM_SAMPLES)
-mfdgp.train()
-
 plot_black_box(spacing,
+               "obj2_mfdgp_cond_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
                func_obj2_mf0,  func_obj2_mf1,
                x_mf0, x_mf1,
                obj2_mean_mf0,  obj2_mean_mf1,
@@ -405,17 +322,6 @@ plot_black_box(spacing,
                obj2_train_mf0, obj2_train_mf1,
                obj2_pred_mean_mf0, obj2_pred_mean_mf1,
                obj2_pred_std_mf0,  obj2_pred_std_mf1,
-               lower_limit, upper_limit,
-               pareto_set=pareto_set, pareto_front_vals=pareto_front[ : , 1 ])
-
-plot_black_box(spacing,
-               func_obj2_mf0,  func_obj2_mf1,
-               x_mf0, x_mf1,
-               obj2_mean_mf0,  obj2_mean_mf1,
-               obj2_std_mf0,   obj2_std_mf1,
-               obj2_train_mf0, obj2_train_mf1,
-               obj2_pred_mean_mf0_old, obj2_pred_mean_mf1_old,
-               obj2_pred_std_mf0_old,  obj2_pred_std_mf1_old,
                lower_limit, upper_limit,
                pareto_set=pareto_set, pareto_front_vals=pareto_front[ : , 1 ])
 
@@ -431,17 +337,9 @@ con1_pred_mean_mf1, con1_pred_std_mf1 = compute_moments_mfdgp(mfdgp, spacing,
                                                               fidelity=1)
 mfdgp.train()
 
-mfdgp.eval()
-con1_pred_mean_mf0_old, con1_pred_std_mf0_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              con1_mean_mf0, con1_std_mf0,
-                                                              fidelity=0, num_samples=NUM_SAMPLES)
-con1_pred_mean_mf1_old, con1_pred_std_mf1_old = compute_moments_mfdgp_old(mfdgp, spacing,
-                                                              con1_mean_mf1, con1_std_mf1,
-                                                              fidelity=1, num_samples=NUM_SAMPLES)
-
-mfdgp.train()
 
 plot_black_box(spacing,
+               "con1_mfdgp_cond_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
                func_con1_mf0,  func_con1_mf1,
                x_mf0, x_mf1,
                con1_mean_mf0,  con1_mean_mf1,
@@ -451,22 +349,50 @@ plot_black_box(spacing,
                con1_pred_std_mf0,  con1_pred_std_mf1,
                lower_limit, upper_limit,
                pareto_set=pareto_set, pareto_front_vals=pareto_front[ : , 1 ], cons=True)
-
-plot_black_box(spacing,
-               func_con1_mf0,  func_con1_mf1,
-               x_mf0, x_mf1,
-               con1_mean_mf0,  con1_mean_mf1,
-               con1_std_mf0,   con1_std_mf1,
-               con1_train_mf0, con1_train_mf1,
-               con1_pred_mean_mf0_old, con1_pred_mean_mf1_old,
-               con1_pred_std_mf0_old,  con1_pred_std_mf1_old,
-               lower_limit, upper_limit,
-               pareto_set=pareto_set, pareto_front_vals=pareto_front[ : , 1 ], cons=True)
+##################################################################################################
+##################################################################################################
 
 
-# with open("blackbox_mfdgp_fitters/mfdgp_cond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "wb") as fw:
-#     pickle.dump(blackbox_mfdgp_fitter, fw)
 
-import pdb; pdb.set_trace()
+def plot_acquisition(spacing, acquisition, blackbox_name, figname, iters_1, iters_2):
+    _, ax = plt.subplots(1, 1, figsize=(18, 12))
+    
+    ax.plot(spacing, acquisition, 'b-', label=blackbox_name)
+    ax.fill_between(spacing, acquisition, acquisition*0.0, color="blue", alpha=0.5)
+    plt.title("Acquisition " + blackbox_name)
+    plt.legend()
+
+    figname = figname.replace("iters1", str(iters_1))
+    figname = figname.replace("iters2", str(iters_2))
+    plt.savefig("/home/lering/Descargas/IMG_DGPMF/6xmf0_3xmf1/using_predict_for_acq/" + figname + ".png", format='png', dpi=100)
+    plt.close()
+
+acq_obj1_f0 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=0, blackbox_name="obj1", is_constraint=False)
+acq_obj2_f0 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=0, blackbox_name="obj2", is_constraint=False)
+acq_con1_f0 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=0, blackbox_name="con1", is_constraint=True)
+acq_all_f0  = jesmoc_mfdgp.coupled_acq(spacing, fidelity=0)
+acq_obj1_f1 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=1, blackbox_name="obj1", is_constraint=False)
+acq_obj2_f1 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=1, blackbox_name="obj2", is_constraint=False)
+acq_con1_f1 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=1, blackbox_name="con1", is_constraint=True)
+acq_all_f1  = jesmoc_mfdgp.coupled_acq(spacing, fidelity=1)
+
+spacing = spacing[ : , 0 ]
+
+# import pdb; pdb.set_trace()
+##################################################################################################
+##################################################################################################
+# Plots of the Acquisition
+plot_acquisition(spacing, acq_obj1_f0, 'obj1 f=0', "acq_mfdgp_o1_f0_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_obj2_f0, 'obj2 f=0', "acq_mfdgp_o2_f0_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_con1_f0, 'con1 f=0', "acq_mfdgp_c1_f0_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_all_f0, 'coupled f=0', "acq_mfdgp_all_f0_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_obj1_f1, 'obj1 f=1', "acq_mfdgp_o1_f1_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_obj2_f1, 'obj2 f=1', "acq_mfdgp_o2_f1_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_con1_f1, 'con1 f=1', "acq_mfdgp_c1_f1_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_all_f1, 'coupled f=1', "acq_mfdgp_all_f1_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+##################################################################################################
+##################################################################################################
+
+# import pdb; pdb.set_trace()
 
 # La distrib_cond debe ser compatible con los datos observados, la frontera y cumplir las cons
