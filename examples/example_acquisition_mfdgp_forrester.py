@@ -21,11 +21,11 @@ np.random.seed(0)
 
 num_fidelities = 2
 
-num_inputs_high_fidelity = 3
-num_inputs_low_fidelity = 6
+num_inputs_high_fidelity = 4
+num_inputs_low_fidelity = 8
 
 num_epochs_1 = 1000
-num_epochs_2 = 1000
+num_epochs_2 = 3000
 batch_size = num_inputs_low_fidelity + num_inputs_high_fidelity # DFS: Cambiar para ver que pasa cuando el batch no es del numero de datos
 
 lower_limit = 0.0
@@ -50,7 +50,7 @@ con1_mf0 = func_con1_mf0(x_mf0)
 # We obtain x and ys for the high fidelity 
 
 upper_limit_high_fidelity = (upper_limit - lower_limit) * 0.7 + lower_limit
-x_mf1 = np.array([0.1, 0.3, 0.6]).reshape((num_inputs_high_fidelity, 1))
+x_mf1 = np.array([0.1, 0.3, 0.5, 0.7]).reshape((num_inputs_high_fidelity, 1))
 obj1_mf1 = func_obj1_mf1(x_mf1)
 obj2_mf1 = func_obj2_mf1(x_mf1)
 con1_mf1 = func_con1_mf1(x_mf1)
@@ -110,15 +110,15 @@ blackbox_mfdgp_fitter.train_mfdgps()
 with open("blackbox_mfdgp_fitters/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "wb") as fw:
     pickle.dump(blackbox_mfdgp_fitter, fw)
 
-with open("blackbox_mfdgp_fitters/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "rb") as fr:
-    blackbox_mfdgp_fitter = pickle.load(fr)
+# with open("blackbox_mfdgp_fitters/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "rb") as fr:
+#     blackbox_mfdgp_fitter = pickle.load(fr)
 # ##################################################################################################
 
-# # num_epochs_1 = 2
-# # num_epochs_2 = 2
+num_epochs_1 = 15000
+num_epochs_2 = 0
 
-# # blackbox_mfdgp_fitter.num_epochs_1 = num_epochs_1
-# # blackbox_mfdgp_fitter.num_epochs_2 = num_epochs_2
+blackbox_mfdgp_fitter.num_epochs_1 = num_epochs_1
+blackbox_mfdgp_fitter.num_epochs_2 = num_epochs_2
 
 jesmoc_mfdgp = JESMOC_MFDGP(model=blackbox_mfdgp_fitter, num_fidelities=num_fidelities)
 jesmoc_mfdgp.add_blackbox(obj1_mean_mf0, obj1_std_mf0, 0, "obj1", is_constraint=False)
@@ -133,8 +133,8 @@ jesmoc_mfdgp.add_blackbox(con1_mean_mf1, con1_std_mf1, 1, "con1", is_constraint=
 with open("blackbox_mfdgp_fitters/jesmoc_mfdgp_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "wb") as fw:
     pickle.dump(jesmoc_mfdgp, fw)
 
-with open("blackbox_mfdgp_fitters/jesmoc_mfdgp_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "rb") as fr:
-    jesmoc_mfdgp = pickle.load(fr)
+# with open("blackbox_mfdgp_fitters/jesmoc_mfdgp_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "rb") as fr:
+#     jesmoc_mfdgp = pickle.load(fr)
 
 def compute_moments_mfdgp(mfdgp, inputs, mean, std, fidelity):
 
@@ -190,7 +190,7 @@ def plot_black_box(inputs,
 
     figname = figname.replace("iters1", str(iters_1))
     figname = figname.replace("iters2", str(iters_2))
-    plt.savefig("/home/lering/Descargas/IMG_DGPMF/6xmf0_3xmf1/using_predict_for_acq/" + figname + ".png", format='png', dpi=100)
+    plt.savefig("/home/lering/Descargas/IMG_DGPMF/8xmf0_4xmf1/using_predict_for_acq/" + figname + ".png", format='png', dpi=100)
     plt.close()
 
 spacing = torch.linspace(lower_limit, upper_limit, 200).double()[ : , None ] # torch.rand(size=(1000,)).double() # torch.rand(size=(1000, input_dims)).double() # Samplear de manera unif tal como se hacia en Spearmint y hacerlo para cada batch
@@ -212,7 +212,7 @@ obj1_pred_mean_mf1, obj1_pred_std_mf1 = compute_moments_mfdgp(mfdgp, spacing,
 mfdgp.train()
 
 plot_black_box(spacing,
-               "obj1_mfdgp_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
+               "obj1_mfdgp_fit_iters1_iters2_8xmf0_4xmf1", num_epochs_1, num_epochs_2,
                func_obj1_mf0,  func_obj1_mf1,
                x_mf0, x_mf1,
                obj1_mean_mf0,  obj1_mean_mf1,
@@ -235,7 +235,7 @@ obj2_pred_mean_mf1, obj2_pred_std_mf1 = compute_moments_mfdgp(mfdgp, spacing,
 mfdgp.train()
 
 plot_black_box(spacing,
-               "obj2_mfdgp_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
+               "obj2_mfdgp_fit_iters1_iters2_8xmf0_4xmf1", num_epochs_1, num_epochs_2,
                func_obj2_mf0,  func_obj2_mf1,
                x_mf0, x_mf1,
                obj2_mean_mf0,  obj2_mean_mf1,
@@ -259,7 +259,7 @@ mfdgp.train()
 
 
 plot_black_box(spacing,
-               "con1_mfdgp_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
+               "con1_mfdgp_fit_iters1_iters2_8xmf0_4xmf1", num_epochs_1, num_epochs_2,
                func_con1_mf0,  func_con1_mf1,
                x_mf0, x_mf1,
                con1_mean_mf0,  con1_mean_mf1,
@@ -290,7 +290,7 @@ obj1_pred_mean_mf1, obj1_pred_std_mf1 = compute_moments_mfdgp(mfdgp, spacing,
 mfdgp.train()
 
 plot_black_box(spacing,
-               "obj1_mfdgp_cond_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
+               "obj1_mfdgp_cond_fit_iters1_iters2_8xmf0_4xmf1", num_epochs_1, num_epochs_2,
                func_obj1_mf0,  func_obj1_mf1,
                x_mf0, x_mf1,
                obj1_mean_mf0,  obj1_mean_mf1,
@@ -314,7 +314,7 @@ obj2_pred_mean_mf1, obj2_pred_std_mf1 = compute_moments_mfdgp(mfdgp, spacing,
 mfdgp.train()
 
 plot_black_box(spacing,
-               "obj2_mfdgp_cond_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
+               "obj2_mfdgp_cond_fit_iters1_iters2_8xmf0_4xmf1", num_epochs_1, num_epochs_2,
                func_obj2_mf0,  func_obj2_mf1,
                x_mf0, x_mf1,
                obj2_mean_mf0,  obj2_mean_mf1,
@@ -339,7 +339,7 @@ mfdgp.train()
 
 
 plot_black_box(spacing,
-               "con1_mfdgp_cond_fit_iters1_iters2_6xmf0_3xmf1", num_epochs_1, num_epochs_2,
+               "con1_mfdgp_cond_fit_iters1_iters2_8xmf0_4xmf1", num_epochs_1, num_epochs_2,
                func_con1_mf0,  func_con1_mf1,
                x_mf0, x_mf1,
                con1_mean_mf0,  con1_mean_mf1,
@@ -364,7 +364,7 @@ def plot_acquisition(spacing, acquisition, blackbox_name, figname, iters_1, iter
 
     figname = figname.replace("iters1", str(iters_1))
     figname = figname.replace("iters2", str(iters_2))
-    plt.savefig("/home/lering/Descargas/IMG_DGPMF/6xmf0_3xmf1/using_predict_for_acq/" + figname + ".png", format='png', dpi=100)
+    plt.savefig("/home/lering/Descargas/IMG_DGPMF/8xmf0_4xmf1/using_predict_for_acq/" + figname + ".png", format='png', dpi=100)
     plt.close()
 
 acq_obj1_f0 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=0, blackbox_name="obj1", is_constraint=False)
@@ -382,14 +382,14 @@ spacing = spacing[ : , 0 ]
 ##################################################################################################
 ##################################################################################################
 # Plots of the Acquisition
-plot_acquisition(spacing, acq_obj1_f0, 'obj1 f=0', "acq_mfdgp_o1_f0_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
-plot_acquisition(spacing, acq_obj2_f0, 'obj2 f=0', "acq_mfdgp_o2_f0_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
-plot_acquisition(spacing, acq_con1_f0, 'con1 f=0', "acq_mfdgp_c1_f0_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
-plot_acquisition(spacing, acq_all_f0, 'coupled f=0', "acq_mfdgp_all_f0_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
-plot_acquisition(spacing, acq_obj1_f1, 'obj1 f=1', "acq_mfdgp_o1_f1_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
-plot_acquisition(spacing, acq_obj2_f1, 'obj2 f=1', "acq_mfdgp_o2_f1_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
-plot_acquisition(spacing, acq_con1_f1, 'con1 f=1', "acq_mfdgp_c1_f1_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
-plot_acquisition(spacing, acq_all_f1, 'coupled f=1', "acq_mfdgp_all_f1_iters1_iters2_6xmf0_3xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_obj1_f0, 'obj1 f=0', "acq_mfdgp_o1_f0_iters1_iters2_8xmf0_4xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_obj2_f0, 'obj2 f=0', "acq_mfdgp_o2_f0_iters1_iters2_8xmf0_4xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_con1_f0, 'con1 f=0', "acq_mfdgp_c1_f0_iters1_iters2_8xmf0_4xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_all_f0, 'coupled f=0', "acq_mfdgp_all_f0_iters1_iters2_8xmf0_4xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_obj1_f1, 'obj1 f=1', "acq_mfdgp_o1_f1_iters1_iters2_8xmf0_4xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_obj2_f1, 'obj2 f=1', "acq_mfdgp_o2_f1_iters1_iters2_8xmf0_4xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_con1_f1, 'con1 f=1', "acq_mfdgp_c1_f1_iters1_iters2_8xmf0_4xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
+plot_acquisition(spacing, acq_all_f1, 'coupled f=1', "acq_mfdgp_all_f1_iters1_iters2_8xmf0_4xmf1", iters_1=num_epochs_1, iters_2=num_epochs_2)
 ##################################################################################################
 ##################################################################################################
 
