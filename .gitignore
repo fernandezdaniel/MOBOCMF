@@ -9,6 +9,7 @@ old/
 pstats/
 R_test/
 build/
+jesmoc_mfdgp/
 .ipynb_checkpoints/
 
 # Files

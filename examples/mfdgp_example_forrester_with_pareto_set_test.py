@@ -121,18 +121,20 @@ def train_mfdgp_model(model, elbo, train_loader, num_epochs_1, num_epochs_2):
 
         minibatch_iter = train_loader
         loss_iter = 0.0
+        kl_iter = 0.0
 
         for (x_batch, y_batch, fidelities) in minibatch_iter:
 
             with gpytorch.settings.num_likelihood_samples(1):
                 optimizer.zero_grad() 
                 output = model(x_batch)
-                loss = -elbo(output, y_batch.T, fidelities)
+                loss, kl = -elbo(output, y_batch.T, fidelities)
                 loss.backward()                
                 optimizer.step() 
                 loss_iter += loss
+                kl_iter += kl
 
-        print("Epoch:", i, "/", num_epochs_1, ". Avg. Neg. ELBO per epoch:", loss_iter.item())
+        print("Epoch:", i, "/", num_epochs_1, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), "\t KL per epoch:", kl_iter.item())
 
     model.fix_variational_hypers(False)
 

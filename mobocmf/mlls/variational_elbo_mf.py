@@ -41,5 +41,5 @@ class VariationalELBOMF(VariationalELBO):
 
         # We return elbo per batch
 
-        return data_term - kl_divergence * num_batch / self.num_data 
+        return data_term - kl_divergence * num_batch / self.num_data, kl_divergence * num_batch / self.num_data
 

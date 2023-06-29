@@ -1,17 +1,23 @@
 import numpy as np
 import torch
 
+from enum import Enum
+
 from gpytorch.models.deep_gps import DeepGP
 from gpytorch.likelihoods import GaussianLikelihood, FixedNoiseGaussianLikelihood # Usar FixedNoiseGaussianLikelihood para incljuir los puntos de la frontera
 from gpytorch.constraints import GreaterThan, Interval
 
 from mobocmf.layers.mfdgp_hidden_layer import MFDGPHiddenLayer
+from mobocmf.util.util import triu_indices, compute_dist
+
+class TL(Enum): # Type of lengthscale
+    ONES = 1
+    MEDIAN = 2
+    CENTESIMAL = 3
 
 class MFDGP(DeepGP): # modos entrenar() y eval()
 
-
-
-    def __init__(self, x_train, y_train, fidelities, num_fidelities, num_samples=30):
+    def __init__(self, x_train, y_train, fidelities, num_fidelities, num_samples=30, type_lengthscale=TL.MEDIAN):
 
         hidden_layers = []
 
@@ -26,25 +32,36 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
         to_sel = (fidelities == 0).flatten()
         inducing_points = x_train[ to_sel, : ]
         inducing_values = y_train[ to_sel, : ].flatten()
+        init_lengthscale = self.get_init_lengthscale(type_lengthscale, inputs=inducing_points)
         hidden_layers.append(MFDGPHiddenLayer(input_dims=self.input_dims,
-                                                num_layer=0,
-                                                inducing_points=inducing_points,
-                                                inducing_values=inducing_values,
-                                                num_fidelities=num_fidelities,
-                                                num_samples=0))
+                                              num_layer=0,
+                                              inducing_points=inducing_points,
+                                              inducing_values=inducing_values,
+                                              init_lengthscale=init_lengthscale,
+                                              num_fidelities=num_fidelities,
+                                              num_samples=0))
 
         for i in range(1, num_fidelities):
 
             # We set the inducing_points to the observations of the previous fidelity in later layers. We take only odd observatios!!!
 
             to_sel = (fidelities == i - 1).flatten()
-            inducing_points = torch.cat((x_train[ to_sel, : ][::2], y_train[ to_sel, : ][::2]), 1)
-            inducing_values = y_train[ to_sel, : ][::2].flatten() * 0.0
+            
+            # inducing_points = torch.cat((x_train[ to_sel, : ][::2], y_train[ to_sel, : ][::2]), 1)
+            # inducing_values = y_train[ to_sel, : ][::2].flatten() * 0.0
+            inducing_points = torch.cat((x_train[ to_sel, : ], y_train[ to_sel, : ]), 1)
+            inducing_values = y_train[ to_sel, : ].flatten() #* 0.0
+
+            # fid_sel = (fidelities == i).flatten()
+            # inducing_values = self.clip_inducing_values(x_train[ to_sel, : ], x_train[ fid_sel, : ], y_train[ fid_sel, : ].flatten())
+
+            init_lengthscale = self.get_init_lengthscale(type_lengthscale, inputs=inducing_points)
             hidden_layers.append(MFDGPHiddenLayer(input_dims=self.input_dims + 1,
                                                   num_layer=i,
                                                   inducing_points=inducing_points,
                                                   inducing_values=inducing_values,
                                                   num_fidelities=num_fidelities,
+                                                  init_lengthscale=init_lengthscale,
                                                   y_high_std=y_high_std,
                                                   num_samples=num_samples))
 
@@ -60,7 +77,7 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
 
         for i, hidden_layer in enumerate(hidden_layers):
             setattr(self, self.name_hidden_layer + str(i), hidden_layer)
-            likelihood = GaussianLikelihood(noise_constraint = GreaterThan(1e-8))
+            likelihood = GaussianLikelihood(noise_constraint=Interval(lower_bound=1e-8, upper_bound=0.1*y_high_std))
 
             # We add a noiseless likelhood (with constraints) for conditional training. This will account for noiseless observations.
                 
@@ -71,6 +88,32 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
 
             setattr(self, self.name_hidden_layer_likelihood + str(i), likelihood)
     
+    def clip_inducing_values(self, x_0, x_1, y_1):
+
+        # Compute distances
+        distances = torch.cdist(x_0, x_1)
+
+        # find closest location between points
+        indices_min = torch.argmin(distances, dim=1)
+
+        return y_1[ indices_min ]
+
+    def get_init_lengthscale(self, type_lengthscale, inputs=None):
+
+        if type_lengthscale == TL.ONES:
+            return torch.ones(self.input_dims)
+
+        elif type_lengthscale == TL.MEDIAN:
+            dists_x_train = compute_dist(inputs)
+            return torch.sqrt(torch.median(dists_x_train[ triu_indices(inputs.shape[ 0 ], 1) ]))
+            # return 0.5 * torch.log(torch.median(dists_x_train[ triu_indices(inputs.shape[ 0 ], 1) ]))
+
+        elif type_lengthscale == TL.CENTESIMAL:
+            return 0.01 * np.ones(self.input_dims)
+        
+        else:
+            ValueError("Wrong type of lengthscale.")
+
     def train_mode(self):
 
         for i in range(self.num_hidden_layers):

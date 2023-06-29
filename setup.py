@@ -10,6 +10,7 @@ setup(name='MOBOCMF',
                "mobocmf.mlls",
                "mobocmf.models",
                "mobocmf.test_functions",
+               "mobocmf.util",
                "examples",
                "experiments"]
 )

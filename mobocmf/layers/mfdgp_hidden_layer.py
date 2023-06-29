@@ -23,7 +23,7 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
 
     # input_dims is the dimensionality of the attribute vector x that is put into the layer 
 
-    def __init__(self, num_layer, input_dims, inducing_points, inducing_values, num_fidelities, y_high_std=1.0, num_samples=10):
+    def __init__(self, num_layer, input_dims, inducing_points, inducing_values, num_fidelities, init_lengthscale, y_high_std=1.0, num_samples=10):
         self.num_layer = num_layer
         self.input_dims = input_dims
         num_inducing = inducing_points.shape[ 0 ]
@@ -36,7 +36,7 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
             covar_module = ScaleKernel(RBFKernel(batch_shape=batch_shape, ard_num_dims=input_dims, \
                 active_dims=list(range(input_dims))), batch_shape=batch_shape, ard_num_dims=None)
             
-            covar_module.base_kernel.initialize(lengthscale = 1.0 * np.ones(input_dims))
+            covar_module.base_kernel.initialize(lengthscale=init_lengthscale)
             covar_module.initialize(outputscale = 1.0)
 
             self.sample_from_posterior = self._sample_from_posterior_layer0
@@ -57,10 +57,11 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
 
             k_lin = LinearKernel(batch_shape=batch_shape, active_dims=D_range[ (input_dims - 1) : input_dims ])
 
-            k_x_1.base_kernel.initialize(lengthscale = 1.0 * np.ones(input_dims - 1))
-            k_f.base_kernel.initialize(lengthscale = 1.0 * np.ones(1))
-            k_x_2.base_kernel.initialize(lengthscale = 1.0 * np.ones(input_dims - 1))
-            k_lin.initialize(variance = 1.0 * np.ones(1))
+            k_x_1.base_kernel.initialize(lengthscale=init_lengthscale)
+            # k_f.base_kernel.initialize(lengthscale=torch.ones(1))
+            k_f.base_kernel.initialize(lengthscale=init_lengthscale) # DFS: Is this correct?
+            k_x_2.base_kernel.initialize(lengthscale=init_lengthscale)
+            k_lin.initialize(variance = torch.ones(1))
 
             k_x_1.initialize(outputscale = 1.0)
             k_f.initialize(outputscale = 1.0)
@@ -78,7 +79,7 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
 
         # We initialize the covariance matrix to something diagonal with small variances. In the high fidelity we use the prior.
 
-        if num_layer == num_fidelities - 1:
+        if num_layer == num_fidelities - 1: # DFS: Should we change this condition to: if num_layer == num_fidelities - 1:
             init_dist = MultivariateNormal(inducing_values,
                                            covar_module(inducing_points) * (1e-2 * y_high_std**2)**2)
         else:
@@ -98,7 +99,7 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
         self.mean_module = ZeroMean()
         self.covar_module = covar_module
 
-        # DFS Parameters for QMC-sampling
+        # DFS: Parameters for QMC-sampling
 
         # samples = other_inputs[0].get_base_samples(sample_shape=torch.Size([10])); inp_.rsample(base_samples=samples)
         # self.sampler = SobolQMCNormalSampler(num_samples=num_QMC_samples, seed=seed_QMC_samples)
