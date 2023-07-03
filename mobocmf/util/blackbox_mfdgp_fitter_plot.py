@@ -175,12 +175,13 @@ class BlackBoxMFDGPFitterPlot():
         self.vals_param_hidden_layer_likelihood_1_noise = []
 
     def _plot_mfdgp_and_params(self, loss_c_iter, kl_c_iter, handler_con, loss_iter=None, pareto_set=None, pareto_front_vals=None):
-        if len(self.iters_uncond) == 0:
-            self.iters_uncond.append(0)
-        else:
-            self.iters_uncond.append(self.iters_uncond[-1] + self.step_plot)
 
-        if loss_iter is not None: 
+        if loss_iter is None: 
+            if len(self.iters_uncond) == 0:
+                self.iters_uncond.append(0)
+            else:
+                self.iters_uncond.append(self.iters_uncond[-1] + self.step_plot)
+        else:
             if len(self.iters_cond) == 0:
                 self.iters_cond.append(0)
             else:
