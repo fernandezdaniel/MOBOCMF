@@ -192,7 +192,7 @@ def plot_black_box(inputs,
     figname = figname.replace("Ninp0", str(len(x_mf0)))
     figname = figname.replace("Ninp1", str(len(x_mf1)))
 
-    path = "/home/lering/Descargas/IMG_DGPMF/Ninp0xmf0_Ninp1xmf1/using_predict_for_acq/"
+    path = "~/Descargas/IMG_DGPMF/Ninp0xmf0_Ninp1xmf1/using_predict_for_acq/"
     path = path.replace("Ninp0", str(len(x_mf0)))
     path = path.replace("Ninp1", str(len(x_mf1)))
     
@@ -375,7 +375,7 @@ def plot_acquisition(spacing, acquisition, blackbox_name, figname):
     figname = figname.replace("Ninp0", str(len(x_mf0)))
     figname = figname.replace("Ninp1", str(len(x_mf1)))
 
-    path = "/home/lering/Descargas/IMG_DGPMF/Ninp0xmf0_Ninp1xmf1/using_predict_for_acq/"
+    path = "~/Descargas/IMG_DGPMF/Ninp0xmf0_Ninp1xmf1/using_predict_for_acq/"
     path = path.replace("Ninp0", str(len(x_mf0)))
     path = path.replace("Ninp1", str(len(x_mf1)))
     
