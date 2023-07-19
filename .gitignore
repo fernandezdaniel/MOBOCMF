@@ -22,4 +22,7 @@ jesmoc_mfdgp/
 *.png
 *.lprof
 *.dat
+*.pdf
+*.txt
+*.zip
 

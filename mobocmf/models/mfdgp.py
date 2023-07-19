@@ -17,15 +17,22 @@ class TL(Enum): # Type of lengthscale
 
 class MFDGP(DeepGP): # modos entrenar() y eval()
 
-    def __init__(self, x_train, y_train, fidelities, num_fidelities, num_samples=30, type_lengthscale=TL.MEDIAN):
+    def __init__(self, x_train, y_train, fidelities, num_fidelities, type_lengthscale=TL.MEDIAN, num_samples_for_acquisition = 25, previously_trained_model = None):
 
         hidden_layers = []
 
         self._eval_mode = False
-        self.num_samples = num_samples
+        self.num_samples_for_acquisition = num_samples_for_acquisition
 
         self.input_dims = x_train.shape[ -1 ]
         y_high_std = np.std(y_train[ (fidelities == num_fidelities - 1).flatten() ].numpy())
+
+        # We check if we are given a previously_trained_model
+
+        if previously_trained_model is not None:
+            previously_trained_layer = getattr(previously_trained_model, previously_trained_model.name_hidden_layer + str(0))
+        else:
+            previously_trained_layer = None
 
         # We set the inducing_points to the observations in the first layer
 
@@ -39,7 +46,8 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
                                               inducing_values=inducing_values,
                                               init_lengthscale=init_lengthscale,
                                               num_fidelities=num_fidelities,
-                                              num_samples=0))
+                                              num_samples_for_acquisition=num_samples_for_acquisition, 
+                                              previously_trained_layer = previously_trained_layer))
 
         for i in range(1, num_fidelities):
 
@@ -56,6 +64,12 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
             # inducing_values = self.clip_inducing_values(x_train[ to_sel, : ], x_train[ fid_sel, : ], y_train[ fid_sel, : ].flatten())
 
             init_lengthscale = self.get_init_lengthscale(type_lengthscale, inputs=inducing_points)
+
+            if previously_trained_model is not None:
+                previously_trained_layer = getattr(previously_trained_model, previously_trained_model.name_hidden_layer + str(i))
+            else:
+                previously_trained_layer = None
+
             hidden_layers.append(MFDGPHiddenLayer(input_dims=self.input_dims + 1,
                                                   num_layer=i,
                                                   inducing_points=inducing_points,
@@ -63,7 +77,8 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
                                                   num_fidelities=num_fidelities,
                                                   init_lengthscale=init_lengthscale,
                                                   y_high_std=y_high_std,
-                                                  num_samples=num_samples))
+                                                  num_samples_for_acquisition=num_samples_for_acquisition,
+                                                  previously_trained_layer = previously_trained_layer))
 
         super().__init__()
 
@@ -76,11 +91,10 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
         # We add as many likelihoods as as layers (important since the noises can be different for each fidelity)
 
         for i, hidden_layer in enumerate(hidden_layers):
+            y_std = np.std(y_train[ (fidelities == i).flatten() ].numpy())
             setattr(self, self.name_hidden_layer + str(i), hidden_layer)
-            likelihood = GaussianLikelihood(noise_constraint=Interval(lower_bound=1e-8, upper_bound=0.1*y_high_std))
+            likelihood = GaussianLikelihood(noise_constraint=Interval(lower_bound=1e-8, upper_bound=0.1*y_std))
 
-            # We add a noiseless likelhood (with constraints) for conditional training. This will account for noiseless observations.
-                
             if i == self.num_fidelities - 1:
                 likelihood.noise = 1e-2 * y_high_std
             else:
@@ -91,9 +105,11 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
     def clip_inducing_values(self, x_0, x_1, y_1):
 
         # Compute distances
+
         distances = torch.cdist(x_0, x_1)
 
         # find closest location between points
+
         indices_min = torch.argmin(distances, dim=1)
 
         return y_1[ indices_min ]
@@ -185,29 +201,28 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
 
         assert fidelity_layer >= 0 and fidelity_layer < self.num_fidelities
 
-        with torch.no_grad():
-            mus = []
-            variances = []
+        mus = []
+        variances = []
 
-            likelihood = getattr(self, self.name_hidden_layer_likelihood + str(fidelity_layer))
-            preds = likelihood(self(test_x, max_fidelity=fidelity_layer)[ fidelity_layer ]) # DFS: Changed, ask  DHL before: likelihood(self(test_x)[ fidelity_layer ])
-            mus.append(preds.mean)
-            variances.append(preds.variance)
+        likelihood = getattr(self, self.name_hidden_layer_likelihood + str(fidelity_layer))
+        preds = likelihood(self(test_x, max_fidelity=fidelity_layer)[ fidelity_layer ]) # DFS: Changed, ask  DHL before: likelihood(self(test_x)[ fidelity_layer ])
+        mus.append(preds.mean)
+        variances.append(preds.variance)
 
         return torch.cat(mus, dim=-1), torch.cat(variances, dim=-1)
     
-    def predict_for_acquisition(self, test_x, fidelity_layer=0): # Que devuelva de todas  las fidelities (Eficiente, pasa los datos solo unaa vez por capa)
+    def predict_for_acquisition(self, test_x, fidelity_layer=0): # Que devuelva de todas  las fidelities (Eficiente, pasa los datos solo una vez por capa)
+
+        # We test if we have three indexes. Three indexes are given in optimize_acquisition by botorch.
+
+        if len(test_x.shape) > 2:
+            assert test_x.shape[ 1 ] == 1
+            test_x = test_x[ :, 0, : ]
 
         # Computes a sample from the predictive distribution calling propagate in the model
         # Note: in a DeepGP call calls eventually the forward method. See gpytorch code.
 
-        # test_x = torch.tile(test_x, (2, 1, 1))
-
-        # assert test_x.shape[ 0 ] == 1
-
-        # test_x_tile = torch.tile(test_x, (self.num_samples, 1))
-        
-        test_x_tile = torch.tile(test_x, (self.num_samples, 1, 1))
+        test_x_tile = test_x.repeat_interleave(self.num_samples_for_acquisition, 0)
 
         self.eval_mode()
 
@@ -215,11 +230,13 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
 
         self.train_mode()
 
-        mus  = torch.mean(torch.reshape(mus_tilde, (self.num_samples, test_x.shape[ 0 ], test_x.shape[ 1 ])), 0)
-        second_moment = torch.mean(torch.reshape(vars_tilde + mus_tilde**2, (self.num_samples, test_x.shape[ 0 ], test_x.shape[ 1 ])), 0)
+        # DHL: The reshape is done to undo the repeat_interleave above
+
+        mus  = torch.mean(torch.reshape(mus_tilde, (test_x.shape[ 0 ], self.num_samples_for_acquisition)), 1)
+        second_moment = torch.mean(torch.reshape(vars_tilde + mus_tilde**2, (test_x.shape[ 0 ], self.num_samples_for_acquisition)), 1)
         vars = second_moment - mus**2
 
-        return mus.T, vars.T
+        return mus, vars
 
     def sample_function_from_each_layer(self):
 
@@ -230,6 +247,19 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
             hidden_layer = getattr(self, self.name_hidden_layer + str(i))
             sample = hidden_layer.sample_from_posterior(self.input_dims, sample_from_posterior_last_layer)
             sample_from_posterior_last_layer = sample
+            result.append(sample)
+
+        return result
+
+    def sample_function_from_prior_each_layer(self):
+
+        result = []
+        sample_from_prior_last_layer = None
+        
+        for i in range(self.num_hidden_layers):
+            hidden_layer = getattr(self, self.name_hidden_layer + str(i))
+            sample = hidden_layer.sample_from_prior(self.input_dims, sample_from_prior_last_layer)
+            sample_from_prior_last_layer = sample
             result.append(sample)
 
         return result

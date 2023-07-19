@@ -22,9 +22,9 @@ class MFDGPHandler():
 
     MAX_TRIES_FOR_FEASIBLE_GRID = 10
 
-    def __init__(self, x_train, y_train, fidelities_train, num_fidelities, batch_size, type_lengthscale):
+    def __init__(self, x_train, y_train, fidelities_train, num_fidelities, batch_size, type_lengthscale, previously_trained_model = None):
         
-        self.mfdgp = MFDGP(x_train, y_train, fidelities_train, num_fidelities=num_fidelities, type_lengthscale=type_lengthscale)
+        self.mfdgp = MFDGP(x_train, y_train, fidelities_train, num_fidelities=num_fidelities, type_lengthscale=type_lengthscale, previously_trained_model = previously_trained_model)
         self.mfdgp.double() # We use double precission to avoid numerical problems
         self.elbo = VariationalELBOMF(self.mfdgp, x_train.shape[-2], num_fidelities=num_fidelities)
 
@@ -77,18 +77,20 @@ class BlackBoxMFDGPFitter():
         self.type_lengthscale = type_lengthscale
 
 
-    def initialize_mfdgp(self, x_train, y_train, fidelities, blackbox_name, threshold_constraint=0.0, is_constraint=False):
+    def initialize_mfdgp(self, x_train, y_train, fidelities, blackbox_name, threshold_constraint=0.0, is_constraint=False, previously_trained_model = None):
 
         if self.x_train is None:
             self.x_train = x_train
         else:
-            assert torch.equal(self.x_train, x_train), "The inputs for this new mfdgp do not match with inputs for previous mfdgp models. This class is not currently prepared for a decoupled evaluation setting."
+            assert torch.equal(self.x_train, x_train), "The inputs for this new mfdgp do not match with inputs for \
+                previous mfdgp models. This class is not currently prepared for a decoupled evaluation setting."
         
         if is_constraint:
 
             self.cons_train = torch.cat((self.cons_train, y_train), 1)
 
-            self.mfdgp_handlers_cons[ blackbox_name ] = MFDGPHandler(x_train, y_train, fidelities, self.num_fidelities, self.batch_size, type_lengthscale=self.type_lengthscale)
+            self.mfdgp_handlers_cons[ blackbox_name ] = MFDGPHandler(x_train, y_train, fidelities, self.num_fidelities, \
+                    self.batch_size, type_lengthscale=self.type_lengthscale, previously_trained_model = previously_trained_model)
             
             self.thresholds_cons = torch.cat((self.thresholds_cons, torch.tensor([threshold_constraint])), 0)
 
@@ -98,7 +100,8 @@ class BlackBoxMFDGPFitter():
 
             self.objs_train = torch.cat((self.objs_train, y_train), 1)
 
-            self.mfdgp_handlers_objs[ blackbox_name ] = MFDGPHandler(x_train, y_train, fidelities, self.num_fidelities, self.batch_size, type_lengthscale=self.type_lengthscale)
+            self.mfdgp_handlers_objs[ blackbox_name ] = MFDGPHandler(x_train, y_train, fidelities, self.num_fidelities, \
+                    self.batch_size, type_lengthscale=self.type_lengthscale, previously_trained_model = previously_trained_model)
 
             self.num_obj += 1
     
@@ -181,7 +184,7 @@ class BlackBoxMFDGPFitter():
             global_optimizer = MOOP(l_samples_objs,
                                     l_samples_cons,
                                     input_dim=inputs.shape[ 1 ],
-                                    grid_size=self.opt_grid_size,
+                                    grid_size=self.opt_grid_size * inputs.shape[ 1 ],
                                     pareto_set_size=self.pareto_set_size)
 
             # self.pareto_set, self.pareto_front = global_optimizer.compute_pareto_solution_from_samples(inputs)
@@ -189,14 +192,14 @@ class BlackBoxMFDGPFitter():
             # return self.pareto_set, self.pareto_front
 
             if (res := global_optimizer.compute_pareto_solution_from_samples(inputs)) is not None:
-                self.pareto_set, self.pareto_front, self.samples_objs = res
-                return self.pareto_set, self.pareto_front, self.samples_objs
+                self.pareto_set, self.pareto_front, self.samples_objs, self.samples_cons = res
+                return self.pareto_set, self.pareto_front, self.samples_objs, self.samples_cons
 
         raise NotFeasiblePoints("[ERROR] No feasible points were found in the constraint space! # tries: %d." % MFDGPHandler.MAX_TRIES_FOR_FEASIBLE_GRID)
 
-    def loss_theta_factors(self, cs_mean, cs_var):
+    def loss_theta_factors(self, cs_mean, cs_var, threshold):
 
-        gamma_c_star = (cs_mean - self.thresholds_cons) / torch.sqrt(cs_var)
+        gamma_c_star = (cs_mean - threshold) / torch.sqrt(cs_var)
 
         cdf_gamma_c_star = dist.cdf(gamma_c_star)
 
@@ -204,13 +207,13 @@ class BlackBoxMFDGPFitter():
 
     def loss_omega_factors(self, fs_mean, fs_var, cs_mean, cs_var, pareto_front):
 
-        gamma_c      = (cs_mean - self.thresholds_cons) / torch.sqrt(cs_var)
+        gamma_c      = (cs_mean - self.thresholds_cons[ : , None ]) / torch.sqrt(cs_var)
         gamma_f_star = (pareto_front[ : , : , None] - fs_mean) / torch.sqrt(fs_var)
 
-        cdf_gamma_c_times_cdf_gamma_f_star = torch.prod(dist.cdf(gamma_c), 1) * torch.prod(dist.cdf(gamma_f_star), 2) # DHL to check!!!
+        cdf_gamma_c_times_cdf_gamma_f_star = torch.prod(dist.cdf(gamma_c), 0) * torch.prod(dist.cdf(gamma_f_star), 1) 
 
-        return torch.sum(np.log(1.0 - self.eps) * cdf_gamma_c_times_cdf_gamma_f_star
-                         + np.log(self.eps) * (1.0 - cdf_gamma_c_times_cdf_gamma_f_star))
+        return torch.sum(np.log(self.eps) * cdf_gamma_c_times_cdf_gamma_f_star
+                         + np.log(1 - self.eps) * (1.0 - cdf_gamma_c_times_cdf_gamma_f_star)) 
 
     def _train_conditioned_mfdgps(self, func_update_model, fix_variational_hypers, num_iters, lr):
 
@@ -218,13 +221,11 @@ class BlackBoxMFDGPFitter():
 
         for handler_obj in self.mfdgp_handlers_objs.values():
             
-            # handler_obj.mfdgp.fix_variational_hypers(fix_variational_hypers)
             handler_obj.mfdgp.fix_variational_hypers_cond(fix_variational_hypers)
             params = params + list(handler_obj.mfdgp.parameters())
 
         for handler_con in self.mfdgp_handlers_cons.values():
             
-            # handler_con.mfdgp.fix_variational_hypers(fix_variational_hypers)
             handler_con.mfdgp.fix_variational_hypers_cond(fix_variational_hypers)
             params = params + list(handler_con.mfdgp.parameters())
 
@@ -255,12 +256,13 @@ class BlackBoxMFDGPFitter():
 
                 with gpytorch.settings.num_likelihood_samples(1):
                     output = handler_objs.mfdgp(x_batch)
-                    loss += -handler_objs.elbo(output, y_batch.T, fidelities) / x_batch.shape[ 0 ] * handler_objs.num_data
+                    loss += -handler_objs.elbo(output, y_batch.T, fidelities)[ 0 ] / x_batch.shape[ 0 ] * handler_objs.num_data
 
                     output = handler_objs.mfdgp(self.pareto_set)
                     pareto_fidelities = torch.ones(size=(self.pareto_front.shape[ 0 ], 1)) * (handler_objs.num_fidelities - 1)
                     loss += -handler_objs.elbo(output, self.pareto_front[ :, i : (i + 1) ].T, pareto_fidelities, include_kl_term = False)
 
+            k = 0
             for i, handler_cons in enumerate(handlers_cons):
 
                 try:
@@ -271,12 +273,14 @@ class BlackBoxMFDGPFitter():
 
                 with gpytorch.settings.num_likelihood_samples(1):
                     output = handler_cons.mfdgp(x_batch)
-                    loss += -handler_cons.elbo(output, y_batch.T, fidelities) / x_batch.shape[ 0 ] * handler_cons.num_data
+                    loss += -handler_cons.elbo(output, y_batch.T, fidelities)[ 0 ] / x_batch.shape[ 0 ] * handler_cons.num_data
 
                     # We add factors that ensure positive constraints at the pareto points. These are the theta factors.
 
                     output = handler_cons.mfdgp(self.pareto_set)[ handler_cons.num_fidelities - 1 ]
-                    loss += -self.loss_theta_factors(output.mean, output.variance) 
+                    loss += -self.loss_theta_factors(output.mean, output.variance, self.thresholds_cons[ k ])  
+
+                k += 1
 
             # We add the omega factors
 
@@ -311,8 +315,8 @@ class BlackBoxMFDGPFitter():
 
             return loss
 
-        self._train_conditioned_mfdgps(_update_conditioned_models, fix_variational_hypers=True, num_iters=self.num_epochs_1, lr=self.lr_1)
-        # self._train_conditioned_mfdgps(_update_conditioned_models, fix_variational_hypers=False, num_iters=self.num_epochs_2, lr=self.lr_2)
+        self._train_conditioned_mfdgps(_update_conditioned_models, fix_variational_hypers=True, num_iters=self.num_epochs_2, lr=self.lr_2)
+#        self._train_conditioned_mfdgps(_update_conditioned_models, fix_variational_hypers=True, num_iters=self.num_epochs_2, lr=0.003)
 
         for handler_obj in self.mfdgp_handlers_objs.values():
             handler_obj.iter_train_loader = None

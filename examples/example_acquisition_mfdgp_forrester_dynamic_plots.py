@@ -120,9 +120,8 @@ blackbox_mfdgp_fitter._set_parameters_to_plot_con1(lower_limit,    upper_limit,
 
 blackbox_mfdgp_fitter.train_mfdgps_and_plot(name_blackbox_to_plot='con1', plt_show=False)
 
-# filename = "mfdgp_uncond_%dxmf0_%dxmf1_%d_%d_new_23062023.dat" % (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2)
-# save_pickle("./blackbox_mfdgp_fitters/", filename, blackbox_mfdgp_fitter)
-# blackbox_mfdgp_fitter = read_pickle("./blackbox_mfdgp_fitters/", filename)
+filename = "mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat" % (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2)
+save_pickle("./blackbox_mfdgp_fitters/", filename, blackbox_mfdgp_fitter)
 
 ##################################################################################################
 ##################################################################################################
@@ -131,16 +130,76 @@ blackbox_mfdgp_fitter.train_mfdgps_and_plot(name_blackbox_to_plot='con1', plt_sh
 ##################################################################################################
 # Conditioned training
 
-blackbox_mfdgp_fitter.num_epochs_1 = 15000
+blackbox_mfdgp_fitter.num_epochs_1 = 3000
 blackbox_mfdgp_fitter.num_epochs_2 = 0
 
 blackbox_mfdgp_fitter.sample_and_store_pareto_solution()
 
 blackbox_mfdgp_fitter.train_conditioned_mfdgps_and_plot(name_blackbox_to_plot='con1', plt_show=True)
 
-filename = "mfdgp_cond_%dxmf0_%dxmf1_%d_%d_new_23062023.dat" % (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2)
+filename = "mfdgp_cond_%dxmf0_%dxmf1_%d_%d.dat" % (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2)
 save_pickle("./blackbox_mfdgp_fitters/", filename, blackbox_mfdgp_fitter)
-blackbox_mfdgp_fitter = read_pickle("./blackbox_mfdgp_fitters/", filename)
+
+##################################################################################################
+##################################################################################################
+# Computation of the Acquisition
+
+blackbox_mfdgp_uncond_fitter = read_pickle("./blackbox_mfdgp_fitters/", filename)
+blackbox_mfdgp_cond_fitter = read_pickle("./blackbox_mfdgp_fitters/", filename)
+
+jesmoc_mfdgp = JESMOC_MFDGP(model_uncond=blackbox_mfdgp_uncond_fitter, num_fidelities=num_fidelities,
+                            model_cond=blackbox_mfdgp_cond_fitter)
+jesmoc_mfdgp.add_blackbox(0, "obj1", is_constraint=False)
+jesmoc_mfdgp.add_blackbox(1, "obj1", is_constraint=False)
+
+jesmoc_mfdgp.add_blackbox(0, "obj2", is_constraint=False)
+jesmoc_mfdgp.add_blackbox(1, "obj2", is_constraint=False)
+
+jesmoc_mfdgp.add_blackbox(0, "con1", is_constraint=True)
+jesmoc_mfdgp.add_blackbox(1, "con1", is_constraint=True)
+
+def plot_acquisition(spacing, acquisition, blackbox_name, figname):
+    _, ax = plt.subplots(1, 1, figsize=(18, 12))
+    
+    ax.plot(spacing, acquisition, 'b-', label=blackbox_name)
+    ax.fill_between(spacing, acquisition, acquisition*0.0, color="blue", alpha=0.5)
+    plt.title("Acquisition " + blackbox_name)
+    plt.legend()
+
+    figname = figname.replace("iters1", str(num_epochs_1))
+    figname = figname.replace("iters2", str(num_epochs_2))
+    figname = figname.replace("Ninp0", str(len(x_mf0)))
+    figname = figname.replace("Ninp1", str(len(x_mf1)))
+
+    path = "~/Descargas/IMG_DGPMF/Ninp0xmf0_Ninp1xmf1/using_predict_for_acq/"
+    path = path.replace("Ninp0", str(len(x_mf0)))
+    path = path.replace("Ninp1", str(len(x_mf1)))
+    
+    create_path(path)
+    plt.savefig(path + figname + ".png", format='png', dpi=100)
+    plt.close()
+
+spacing = torch.linspace(lower_limit, upper_limit, 200).double()[ : , None ]
+
+acq_obj1_f0 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=0, blackbox_name="obj1", is_constraint=False)
+acq_obj2_f0 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=0, blackbox_name="obj2", is_constraint=False)
+acq_con1_f0 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=0, blackbox_name="con1", is_constraint=True)
+acq_all_f0  = jesmoc_mfdgp.coupled_acq(spacing, fidelity=0)
+acq_obj1_f1 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=1, blackbox_name="obj1", is_constraint=False)
+acq_obj2_f1 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=1, blackbox_name="obj2", is_constraint=False)
+acq_con1_f1 = jesmoc_mfdgp.decoupled_acq(spacing, fidelity=1, blackbox_name="con1", is_constraint=True)
+acq_all_f1  = jesmoc_mfdgp.coupled_acq(spacing, fidelity=1)
+
+spacing = spacing[ : , 0 ]
+
+plot_acquisition(spacing, acq_obj1_f0, 'obj1 f=0', "acq_mfdgp_o1_f0_iters1_iters2_Ninp0xmf0_Ninp1xmf1")
+plot_acquisition(spacing, acq_obj2_f0, 'obj2 f=0', "acq_mfdgp_o2_f0_iters1_iters2_Ninp0xmf0_Ninp1xmf1")
+plot_acquisition(spacing, acq_con1_f0, 'con1 f=0', "acq_mfdgp_c1_f0_iters1_iters2_Ninp0xmf0_Ninp1xmf1")
+plot_acquisition(spacing, acq_all_f0, 'coupled f=0', "acq_mfdgp_all_f0_iters1_iters2_Ninp0xmf0_Ninp1xmf1")
+plot_acquisition(spacing, acq_obj1_f1, 'obj1 f=1', "acq_mfdgp_o1_f1_iters1_iters2_Ninp0xmf0_Ninp1xmf1")
+plot_acquisition(spacing, acq_obj2_f1, 'obj2 f=1', "acq_mfdgp_o2_f1_iters1_iters2_Ninp0xmf0_Ninp1xmf1")
+plot_acquisition(spacing, acq_con1_f1, 'con1 f=1', "acq_mfdgp_c1_f1_iters1_iters2_Ninp0xmf0_Ninp1xmf1")
+plot_acquisition(spacing, acq_all_f1, 'coupled f=1', "acq_mfdgp_all_f1_iters1_iters2_Ninp0xmf0_Ninp1xmf1")
 
 ##################################################################################################
 ##################################################################################################

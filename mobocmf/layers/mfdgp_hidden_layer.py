@@ -10,24 +10,24 @@ from gpytorch.distributions import MultivariateNormal
 from gpytorch.models.deep_gps import DeepGPLayer
 from gpytorch.lazy import LazyEvaluatedKernelTensor
 
-# from botorch.sampling.normal import SobolQMCNormalSampler
-from botorch.sampling.samplers import SobolQMCNormalSampler
-
 class CovarianceMatrixMF(LazyEvaluatedKernelTensor):
 
     def add_jitter(self, jitter_val = 2e-6):
         return super(LazyEvaluatedKernelTensor, self).add_jitter(jitter_val)
 
 # necesita el modo_entrenar() y eval(), en el segundo modo llamamos a MC.
-class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana estandar y especificas para cada capa y reusar # Hacer un metodo que sea fixed_sample(x <- del cual generar la muestra) (num_sample, self.num_layer) con samples fijos para la capa, solo tiene que generar un sample
+# Lo fijo son las muestras de la Gausiana estandar y especificas para cada capa y reusar # Hacer un metodo que sea fixed_sample(x <- del cual generar la muestra) (num_sample, self.num_layer) con samples fijos para la capa, solo tiene que generar un sample
+
+class MFDGPHiddenLayer(DeepGPLayer): 
 
     # input_dims is the dimensionality of the attribute vector x that is put into the layer 
 
-    def __init__(self, num_layer, input_dims, inducing_points, inducing_values, num_fidelities, init_lengthscale, y_high_std=1.0, num_samples=10):
+    def __init__(self, num_layer, input_dims, inducing_points, inducing_values, num_fidelities, init_lengthscale, y_high_std=1.0, num_samples_for_acquisition=25, previously_trained_layer = None):
         self.num_layer = num_layer
         self.input_dims = input_dims
         num_inducing = inducing_points.shape[ 0 ]
         batch_shape = torch.Size([])
+        self.num_inducing = num_inducing
 
         # We initialize the covariance function depending on whether we are a first layer or not
 
@@ -40,6 +40,7 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
             covar_module.initialize(outputscale = 1.0)
 
             self.sample_from_posterior = self._sample_from_posterior_layer0
+            self.sample_from_prior = self._sample_from_prior_layer0
         else:
 
             # We use the fact that the output dim of a layer is always 1 in this model
@@ -58,8 +59,7 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
             k_lin = LinearKernel(batch_shape=batch_shape, active_dims=D_range[ (input_dims - 1) : input_dims ])
 
             k_x_1.base_kernel.initialize(lengthscale=init_lengthscale)
-            # k_f.base_kernel.initialize(lengthscale=torch.ones(1))
-            k_f.base_kernel.initialize(lengthscale=init_lengthscale) # DFS: Is this correct?
+            k_f.base_kernel.initialize(lengthscale=1.0)  # The targets are assumed to be standardized more or less.
             k_x_2.base_kernel.initialize(lengthscale=init_lengthscale)
             k_lin.initialize(variance = torch.ones(1))
 
@@ -70,6 +70,12 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
             covar_module = k_x_1 * (k_lin + k_f) + k_x_2
 
             self.sample_from_posterior = self._sample_from_posterior
+            self.sample_from_prior = self._sample_from_prior
+
+        # We check if we have a previously_trained_layer and restore the parameters
+
+        if previously_trained_layer is not None:
+            covar_module.state_dict(previously_trained_layer.covar_module.state_dict())
 
         # We initialize the variational approximation
 
@@ -77,13 +83,35 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
                                                                    batch_shape=batch_shape,
                                                                    mean_init_std=0.0)
 
-        # We initialize the covariance matrix to something diagonal with small variances. In the high fidelity we use the prior.
+        # We check if there is a previously_trained_layer for initialization
 
-        if num_layer == num_fidelities - 1: # DFS: Should we change this condition to: if num_layer == num_fidelities - 1:
-            init_dist = MultivariateNormal(inducing_values,
-                                           covar_module(inducing_points) * (1e-2 * y_high_std**2)**2)
+        if previously_trained_layer is not None:
+
+            # We check if the number of inducing_points is the same
+
+            if num_inducing == previously_trained_layer.num_inducing:
+                C = previously_trained_layer.variational_strategy.variational_distribution.covariance_matrix.detach()
+                init_dist = MultivariateNormal(previously_trained_layer.variational_strategy.variational_distribution.mean.detach(), C)
+            else:
+
+                # DHL: XXX We assume the new point is always last
+
+                C = previously_trained_layer.variational_strategy.variational_distribution.covariance_matrix.detach()
+                C_new = torch.eye(self.num_inducing) 
+                C_new[ 0 : (self.num_inducing - 1), 0 : (self.num_inducing - 1)] = C
+                C_new[ self.num_inducing - 1, self.num_inducing - 1 ] = 1e-8
+                init_dist = MultivariateNormal(torch.cat([ previously_trained_layer.variational_strategy.variational_distribution.mean.detach(), \
+                        torch.ones([1]) *  inducing_values[ -1 ] ]), C_new)
+                
         else:
-            init_dist = MultivariateNormal(inducing_values, torch.eye(num_inducing) * 1e-8)
+
+            # If there is no previously trained layer, we initialize the covariance matrix to something diagonal 
+            # with small variances. In the high fidelity we use the prior.
+
+            if num_layer == num_fidelities - 1: # DFS: Should we change this condition to: if num_layer == num_fidelities - 1:
+                init_dist = MultivariateNormal(inducing_values, covar_module(inducing_points) * (1e-2 * y_high_std**2)**2)
+            else:
+                init_dist = MultivariateNormal(inducing_values, torch.eye(num_inducing) * 1e-8)
 
         variational_distribution.initialize_variational_distribution(init_dist)
 
@@ -99,16 +127,13 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
         self.mean_module = ZeroMean()
         self.covar_module = covar_module
 
-        # DFS: Parameters for QMC-sampling
+        if previously_trained_layer is not None:
+            self.samples = torch.ones([num_samples_for_acquisition]) * previously_trained_layer.samples
+        else:
+            self.samples = torch.normal(mean=torch.zeros([num_samples_for_acquisition]), std=torch.ones([num_samples_for_acquisition]))[ : , None ]
 
-        # samples = other_inputs[0].get_base_samples(sample_shape=torch.Size([10])); inp_.rsample(base_samples=samples)
-        # self.sampler = SobolQMCNormalSampler(num_samples=num_QMC_samples, seed=seed_QMC_samples)
-        
-        # self.base_samples_other_inp = get_base_samples(sample_shape=torch.Size([num_QMC_samples]))
-        self.samples = 1.0 #torch.normal(mean=torch.zeros([num_samples]), std=torch.ones([num_samples]))[ : , None ]
-        self.num_samples = num_samples
+        self.num_samples_for_acquisition = num_samples_for_acquisition
         self._eval_mode = False
-
 
     def train_mode(self):
         self._eval_mode = False
@@ -144,9 +169,18 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
             for inp in other_inputs:
 
                 if isinstance(inp, gpytorch.distributions.MultivariateNormal):
+
                     # inp = inp.rsample().T
+
                     if self._eval_mode:
-                        inp = torch.reshape(inp.mean + torch.sqrt(inp.variance) * self.samples, x.shape)
+
+                        # We adapt the samples to multiply each repeated input point (only repeated points in eval_model)
+
+                        num_test_points = int(inp.mean.shape[ 1 ] / self.num_samples_for_acquisition)
+                        repeated_samples = self.samples[None,:,:].repeat_interleave(num_test_points, 0).reshape(inp.mean.shape)
+
+                        inp = torch.reshape(inp.mean + torch.sqrt(inp.variance) * repeated_samples, (x.shape[ 0 ], 1))
+
                     else:
                         inp = inp.rsample().T
 
@@ -194,6 +228,30 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
         
         theta = self._rff_sample_posterior_weights(y_data[:, 0], S_data, Phi)
         
+        def wrapper(x, gradient=False):
+            if gradient: # The gradient computation is not prepared for broadcasting
+                assert x.shape[ 0 ] == 1
+
+            if x.ndim == 1:
+                x = x[ None, : ]
+
+            features = self._phi_rbf(x, W, b, alpha, nFeatures, gradient=gradient)
+            return theta @ features
+
+        return wrapper
+
+    def _sample_from_prior_layer0(self, input_dim, sample_from_prior_last_layer=None, nFeatures=500):
+
+        assert sample_from_prior_last_layer is None
+
+        lengthscale = 0.25 * input_dim
+        alpha  = 1.0
+
+        W   = np.random.normal(size=(nFeatures, input_dim)) / lengthscale
+        b   = np.random.uniform(low=0., high=(2 * np.pi), size=(nFeatures, 1))
+        
+        theta = np.random.normal(loc=0., scale=1., size=nFeatures)
+
         def wrapper(x, gradient=False):
             if gradient: # The gradient computation is not prepared for broadcasting
                 assert x.shape[ 0 ] == 1
@@ -287,3 +345,75 @@ class MFDGPHiddenLayer(DeepGPLayer): # Lo fijo son las muestras de la Gausiana e
             return theta @ features
 
         return wrapper
+
+    def _sample_from_prior(self, input_dim, sample_from_prior_last_layer=None, nFeatures=500):
+
+        assert sample_from_prior_last_layer is not None
+
+        lengthscale_x1 = 0.25 * input_dim
+        lengthscale_f  = 1.0
+        lengthscale_x2 = 0.25 * input_dim
+
+        alpha_x1  = 1.0
+        alpha_f   = 1.0
+        alpha_x1f = alpha_x1 * alpha_f
+        alpha_x2  = 0.0
+
+        nu_lin    = 1.0
+
+        W_x1  = np.random.normal(size=(nFeatures, input_dim)) / lengthscale_x1
+        W_f   = np.random.normal(size=nFeatures) / lengthscale_f
+        W_x1f = np.concatenate([W_x1, W_f[ : , None]], axis=1)
+        W_x2  = np.random.normal(size=(nFeatures, input_dim)) / lengthscale_x2
+
+        b_x1  = np.random.uniform(low=0., high=(2 * np.pi), size=(nFeatures, 1))
+        b_x1f = b_x1
+        b_x2  = np.random.uniform(low=0., high=(2 * np.pi), size=(nFeatures, 1))
+
+        theta = np.random.normal(loc=0., scale=1., size=3 * nFeatures)
+
+        def wrapper(x, gradient=False):
+
+            if x.ndim == 1:
+                x = x[ None, : ]
+
+            if gradient:
+                
+                assert x.shape[ 0 ] == 1
+                
+                f = sample_from_prior_last_layer(x)
+                xf = np.concatenate([x, f[ : , None]], axis=1)
+
+                features_x1  = self._phi_rbf(x,  W_x1,  b_x1,  alpha_x1, nFeatures, gradient=False)
+                features_x1f = self._phi_rbf(xf, W_x1f, b_x1f, alpha_x1f, nFeatures, gradient=False)
+                features_x2  = self._phi_rbf(x,  W_x2,  b_x2,  alpha_x2, nFeatures, gradient=False)
+
+                df_dx = sample_from_posterior_last_layer(x, gradient=True)
+
+                dfeatures_xf_dx = np.concatenate([np.eye(x.shape[ 1 ]), df_dx[:,None]], axis=1)
+
+                dfeatures_x1_dx   = self._phi_rbf(x,  W_x1,  b_x1,  alpha_x1, nFeatures, gradient=True)
+                dfeatures_x1f_dxf = self._phi_rbf(xf, W_x1f, b_x1f, alpha_x1f, nFeatures, gradient=True)
+                dfeatures_x2_dx   = self._phi_rbf(x,  W_x2,  b_x2,  alpha_x2, nFeatures, gradient=True)
+
+                dfeatures_x1f_dx = dfeatures_x1f_dxf @ dfeatures_xf_dx.T
+
+                features = np.concatenate([((dfeatures_x1_dx * f + df_dx * features_x1) * np.sqrt(nu_lin)),
+                                             dfeatures_x1f_dx,
+                                             dfeatures_x2_dx])
+            else:
+                
+                f = sample_from_prior_last_layer(x)
+                xf = np.concatenate([x, f[ : , None]], axis=1)
+
+                features_x1  = self._phi_rbf(x,  W_x1,  b_x1,  alpha_x1, nFeatures, gradient=False)
+                features_x1f = self._phi_rbf(xf, W_x1f, b_x1f, alpha_x1f, nFeatures, gradient=False)
+                features_x2  = self._phi_rbf(x,  W_x2,  b_x2,  alpha_x2, nFeatures, gradient=False)
+
+                features = np.concatenate([(features_x1 * f * np.sqrt(nu_lin)), features_x1f, features_x2])
+                
+            return theta @ features
+
+        return wrapper
+
+

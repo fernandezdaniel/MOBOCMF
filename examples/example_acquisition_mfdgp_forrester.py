@@ -121,7 +121,7 @@ num_epochs_2 = 0 # There is only one phase in the cond training
 blackbox_mfdgp_fitter.num_epochs_1 = num_epochs_1
 blackbox_mfdgp_fitter.num_epochs_2 = num_epochs_2
 
-jesmoc_mfdgp = JESMOC_MFDGP(model=blackbox_mfdgp_fitter, num_fidelities=num_fidelities)
+jesmoc_mfdgp = JESMOC_MFDGP(model_uncond=blackbox_mfdgp_fitter, num_fidelities=num_fidelities)
 jesmoc_mfdgp.add_blackbox(obj1_mean_mf0, obj1_std_mf0, 0, "obj1", is_constraint=False)
 jesmoc_mfdgp.add_blackbox(obj1_mean_mf1, obj1_std_mf1, 1, "obj1", is_constraint=False)
 
@@ -143,7 +143,7 @@ def compute_moments_mfdgp(mfdgp, inputs, mean, std, fidelity):
     pred_mean = pred_means * std + mean
     pred_std  = np.sqrt(pred_variances) * std
 
-    return pred_mean.numpy()[ 0 ], pred_std.numpy()[ 0 ]
+    return pred_mean.numpy(), pred_std.numpy()
 
 def plot_black_box(inputs,
                    figname,

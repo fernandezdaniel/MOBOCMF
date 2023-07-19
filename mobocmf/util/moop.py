@@ -272,5 +272,5 @@ class MOOP():
         if self.pareto_set_size is not None:
             pareto_set, pareto_front = self.compute_pareto_front_and_set_summary_y_space(pareto_set, pareto_front, self.pareto_set_size)
         
-        return torch.from_numpy(pareto_set), torch.from_numpy(pareto_front), self.samples_objs
+        return torch.from_numpy(pareto_set), torch.from_numpy(pareto_front), self.samples_objs, self.samples_cons
         
