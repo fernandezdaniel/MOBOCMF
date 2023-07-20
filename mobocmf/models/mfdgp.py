@@ -36,14 +36,17 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
 
         # We set the inducing_points to the observations in the first layer
 
-        to_sel = (fidelities == 0).flatten()
-        inducing_points = x_train[ to_sel, : ]
-        inducing_values = y_train[ to_sel, : ].flatten()
-        init_lengthscale = self.get_init_lengthscale(type_lengthscale, inputs=inducing_points)
+#        to_sel = (fidelities == 0).flatten()
+#        inducing_points = x_train[ to_sel, : ]
+#        inducing_values = y_train[ to_sel, : ].flatten()
+
+        inducing_points_0, inducing_values_0 = self.find_good_initial_inducing_points_and_values(x_train, y_train, fidelities, 0)
+
+        init_lengthscale = self.get_init_lengthscale(type_lengthscale, inputs=inducing_points_0)
         hidden_layers.append(MFDGPHiddenLayer(input_dims=self.input_dims,
                                               num_layer=0,
-                                              inducing_points=inducing_points,
-                                              inducing_values=inducing_values,
+                                              inducing_points=inducing_points_0,
+                                              inducing_values=inducing_values_0,
                                               init_lengthscale=init_lengthscale,
                                               num_fidelities=num_fidelities,
                                               num_samples_for_acquisition=num_samples_for_acquisition, 
@@ -53,12 +56,16 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
 
             # We set the inducing_points to the observations of the previous fidelity in later layers. We take only odd observatios!!!
 
-            to_sel = (fidelities == i - 1).flatten()
+            #to_sel = (fidelities == i - 1).flatten()
             
             # inducing_points = torch.cat((x_train[ to_sel, : ][::2], y_train[ to_sel, : ][::2]), 1)
             # inducing_values = y_train[ to_sel, : ][::2].flatten() * 0.0
-            inducing_points = torch.cat((x_train[ to_sel, : ], y_train[ to_sel, : ]), 1)
-            inducing_values = y_train[ to_sel, : ].flatten() #* 0.0
+            #inducing_points = torch.cat((x_train[ to_sel, : ], y_train[ to_sel, : ]), 1)
+            #inducing_values = y_train[ to_sel, : ].flatten() #* 0.0
+
+            #inducing_points, inducing_values = self.find_good_initial_inducing_points_and_values(x_train, y_train, fidelities, i)
+            inducing_points = torch.cat((inducing_points_0, inducing_values_0[:,None]), 1)
+            inducing_values = inducing_values_0
 
             # fid_sel = (fidelities == i).flatten()
             # inducing_values = self.clip_inducing_values(x_train[ to_sel, : ], x_train[ fid_sel, : ], y_train[ fid_sel, : ].flatten())
@@ -181,6 +188,7 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
         for i in range(self.num_hidden_layers):
             hidden_layer = getattr(self, self.name_hidden_layer + str(i))
             hidden_layer.variational_strategy._variational_distribution.chol_variational_covar.requires_grad = not value
+#            hidden_layer.variational_strategy.inducing_points.requires_grad = not value
             
     def fix_variational_hypers_cond(self, value): # Cambiar para que se fijen todos los parametros excepto la media y la var del modelo
 
@@ -263,4 +271,50 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
             result.append(sample)
 
         return result
+
+    def find_good_initial_inducing_points_and_values(self, x_train, y_train, fidelities, layer):
+
+        num_inducing_points = 100
+
+        if layer == 0:
+
+            # We sample uniformly in the unit box the inducing points
+
+            inducing_points = torch.rand(size = ((num_inducing_points, x_train.shape[ 1 ])))
+            inducing_values = torch.ones(num_inducing_points)
+
+            # We set the initial inducing values to the targets of the closest point for that fidelity
+            
+            for i in range(num_inducing_points):
+                temporal_data = torch.cat((x_train[ fidelities[ :, 0 ] == 0, : ], inducing_points[ i : (i + 1), : ]), 0)
+                to_sel = torch.argmin(compute_dist(temporal_data)[ 0 : (temporal_data.shape[ 0 ] - 1), temporal_data.shape[ 0 ] - 1])
+                inducing_values[ i ] = y_train[ fidelities[ :, 0 ] == 0 , : ][ to_sel ]
+
+        else:
+
+            # We sample uniformly in the unit box the inducing points
+
+            inducing_points = torch.rand(size = ((num_inducing_points, x_train.shape[ 1 ])))
+            inducing_values = torch.ones(num_inducing_points)
+            inducing_values_previous_layer = torch.ones(num_inducing_points)
+
+            # We set the initial inducing values to the targets of the closest point for that fidelity
+            
+            for i in range(num_inducing_points):
+                temporal_data = torch.cat((x_train[ fidelities[ :, 0 ] == layer, : ], inducing_points[ i : (i + 1), : ]), 0)
+                to_sel = torch.argmin(compute_dist(temporal_data)[ 0 : (temporal_data.shape[ 0 ] - 1), temporal_data.shape[ 0 ] - 1])
+                inducing_values[ i ] = y_train[ fidelities[ :, 0 ] == layer , : ][ to_sel ]
+
+                # The output from the previous layer is set to the closest target value of the previous fidelity
+
+                temporal_data = torch.cat((x_train[ fidelities[ :, 0 ] == layer - 1, : ], inducing_points[ i : (i + 1), : ]), 0)
+                to_sel = torch.argmin(compute_dist(temporal_data)[ 0 : (temporal_data.shape[ 0 ] - 1), temporal_data.shape[ 0 ] - 1])
+                inducing_values_previous_layer[ i ] = y_train[ fidelities[ :, 0 ] == layer - 1, : ][ to_sel ]
+
+            inducing_points = torch.cat((inducing_points, inducing_values_previous_layer[ : , None ]), 1)
+
+        return inducing_points, inducing_values
+
+
+
 

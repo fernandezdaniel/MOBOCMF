@@ -42,12 +42,12 @@ class MOOP():
 
         # We obtain the feasible locations of the first constraint
 
-        feasible_region = constraints[ 0 ](grid) >= feasible_values[ 0 ]
+        feasible_region = constraints[ 0 ](grid) >= feasible_values[ 0 ] 
 
         # We compute the feasible mask of the rest of the constraints and combine all the results
 
         for i, con_fun in enumerate(constraints[ 1 : ]):
-            feasible_region = np.logical_and(feasible_region, con_fun(grid) >= feasible_values[ i ])
+            feasible_region = np.logical_and(feasible_region, con_fun(grid) >= feasible_values[ i + 1 ])
 
         if not np.any(feasible_region):
             return None
@@ -73,7 +73,7 @@ class MOOP():
         def g(x):
             g_func = np.zeros(num_con)
             for i, constraint_wrapper in enumerate(cons):
-                g_func[ i ] = constraint_wrapper(x, gradient=False)
+                g_func[ i ] = constraint_wrapper(x, gradient=False) - self.feasible_values[ i ]
             return g_func
 
         def g_prime(x):
@@ -104,7 +104,7 @@ class MOOP():
         def g(x):
             g_func = np.zeros(num_con)
             for i,constraint_wrapper in enumerate(cons):
-                g_func[ i ] = constraint_wrapper(x, gradient=False) - constraint_tol
+                g_func[ i ] = constraint_wrapper(x, gradient=False) - constraint_tol - self.feasible_values[ i ]
             return g_func
 
         opt_x = spo.fmin_slsqp(f,
@@ -214,6 +214,7 @@ class MOOP():
 
         grid = np.concatenate((np.random.uniform(size=(self.input_dim * self.grid_size, self.input_dim)), inputs))
 
+
         # We remove all the infeasible locations of the grid (this speeds up the optimization process)
 
         if (grid := self.find_feasible_grid(self.samples_cons, grid, feasible_values=self.feasible_values)) is None: # XXX DFS: We use Walrus Operator, python version must be >= 3.8
@@ -245,7 +246,7 @@ class MOOP():
                 opt_objs_x = np.vstack((opt_objs_x, opt_x))
 
         # We include in the grid the location of the optimums of the objectives
-        
+
         if opt_objs_x.shape[ 0 ] > 0:
 
             grid = np.vstack((grid, opt_objs_x))

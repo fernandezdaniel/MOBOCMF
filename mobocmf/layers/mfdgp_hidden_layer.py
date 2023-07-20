@@ -9,6 +9,7 @@ from gpytorch.variational import UnwhitenedVariationalStrategy, CholeskyVariatio
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.models.deep_gps import DeepGPLayer
 from gpytorch.lazy import LazyEvaluatedKernelTensor
+from gpytorch.constraints import Interval
 
 class CovarianceMatrixMF(LazyEvaluatedKernelTensor):
 
@@ -58,14 +59,14 @@ class MFDGPHiddenLayer(DeepGPLayer):
 
             k_lin = LinearKernel(batch_shape=batch_shape, active_dims=D_range[ (input_dims - 1) : input_dims ])
 
-            k_x_1.base_kernel.initialize(lengthscale=init_lengthscale)
+            k_x_1.base_kernel.initialize(lengthscale=init_lengthscale * 10.0)  # DHL we set this to be initially very smooth to favor dependencies across all inputs
             k_f.base_kernel.initialize(lengthscale=1.0)  # The targets are assumed to be standardized more or less.
             k_x_2.base_kernel.initialize(lengthscale=init_lengthscale)
             k_lin.initialize(variance = torch.ones(1))
 
             k_x_1.initialize(outputscale = 1.0)
             k_f.initialize(outputscale = 1.0)
-            k_x_2.initialize(outputscale = 1.0)
+            k_x_2.initialize(outputscale = 0.01) # This is set to be small initially to favor strong dependencies
 
             covar_module = k_x_1 * (k_lin + k_f) + k_x_2
 
@@ -75,7 +76,7 @@ class MFDGPHiddenLayer(DeepGPLayer):
         # We check if we have a previously_trained_layer and restore the parameters
 
         if previously_trained_layer is not None:
-            covar_module.state_dict(previously_trained_layer.covar_module.state_dict())
+            covar_module.load_state_dict(previously_trained_layer.covar_module.state_dict())
 
         # We initialize the variational approximation
 
@@ -83,40 +84,45 @@ class MFDGPHiddenLayer(DeepGPLayer):
                                                                    batch_shape=batch_shape,
                                                                    mean_init_std=0.0)
 
-        # We check if there is a previously_trained_layer for initialization
+#        # We check if there is a previously_trained_layer for initialization
+#
+#        if previously_trained_layer is not None:
+#
+#            # We check if the number of inducing_points is the same
+#
+#            if False:#num_inducing == previously_trained_layer.num_inducing:
+#                C = previously_trained_layer.variational_strategy.variational_distribution.covariance_matrix.detach()
+#                init_dist = MultivariateNormal(previously_trained_layer.variational_strategy.variational_distribution.mean.detach(), C)
+#            else:
+#
+#                # DHL: XXX We assume the new point is always last
+#
+#                C = previously_trained_layer.variational_strategy.variational_distribution.covariance_matrix.detach()
+#                C_new = torch.eye(num_inducing) 
+#                C_new[ 0 : (num_inducing - 1), 0 : (num_inducing - 1)] = C
+#                C_new[ num_inducing - 1, num_inducing - 1 ] = 1e-8
+#                init_dist = MultivariateNormal(torch.cat([ previously_trained_layer.variational_strategy.variational_distribution.mean.detach(), \
+#                        torch.ones([1]) *  inducing_values[ -1 ] ]), C_new)
+#                
+#        else:
+#
+#            # If there is no previously trained layer, we initialize the covariance matrix to something diagonal 
+#            # with small variances. In the high fidelity we use the prior.
+#
+#            if num_layer == num_fidelities - 1: # DFS: Should we change this condition to: if num_layer == num_fidelities - 1:
+#                init_dist = MultivariateNormal(inducing_values, covar_module(inducing_points) * (1e-2 * y_high_std**2)**2)
+#            else:
+#                init_dist = MultivariateNormal(inducing_values, torch.eye(num_inducing) * 1e-8)
 
-        if previously_trained_layer is not None:
-
-            # We check if the number of inducing_points is the same
-
-            if num_inducing == previously_trained_layer.num_inducing:
-                C = previously_trained_layer.variational_strategy.variational_distribution.covariance_matrix.detach()
-                init_dist = MultivariateNormal(previously_trained_layer.variational_strategy.variational_distribution.mean.detach(), C)
-            else:
-
-                # DHL: XXX We assume the new point is always last
-
-                C = previously_trained_layer.variational_strategy.variational_distribution.covariance_matrix.detach()
-                C_new = torch.eye(self.num_inducing) 
-                C_new[ 0 : (self.num_inducing - 1), 0 : (self.num_inducing - 1)] = C
-                C_new[ self.num_inducing - 1, self.num_inducing - 1 ] = 1e-8
-                init_dist = MultivariateNormal(torch.cat([ previously_trained_layer.variational_strategy.variational_distribution.mean.detach(), \
-                        torch.ones([1]) *  inducing_values[ -1 ] ]), C_new)
-                
+        if num_layer == num_fidelities - 1: # DFS: Should we change this condition to: if num_layer == num_fidelities - 1:
+            init_dist = MultivariateNormal(inducing_values, covar_module(inducing_points) * (1e-2 * y_high_std**2)**2)
         else:
-
-            # If there is no previously trained layer, we initialize the covariance matrix to something diagonal 
-            # with small variances. In the high fidelity we use the prior.
-
-            if num_layer == num_fidelities - 1: # DFS: Should we change this condition to: if num_layer == num_fidelities - 1:
-                init_dist = MultivariateNormal(inducing_values, covar_module(inducing_points) * (1e-2 * y_high_std**2)**2)
-            else:
-                init_dist = MultivariateNormal(inducing_values, torch.eye(num_inducing) * 1e-8)
+            init_dist = MultivariateNormal(inducing_values, torch.eye(num_inducing) * 1e-8)
 
         variational_distribution.initialize_variational_distribution(init_dist)
 
         variational_strategy = UnwhitenedVariationalStrategy(self, inducing_points, variational_distribution,
-                                                             learn_inducing_locations=False)
+                                                             learn_inducing_locations=True)
         variational_strategy.variational_params_initialized = torch.tensor(1) # XXX DHL This avoids random initialization
 
         # XXX DHL None argument generates MultivNormal not MultiTaskMultivarnormal, used often at the last layer, 
@@ -350,14 +356,14 @@ class MFDGPHiddenLayer(DeepGPLayer):
 
         assert sample_from_prior_last_layer is not None
 
-        lengthscale_x1 = 0.25 * input_dim
+        lengthscale_x1 = 10 * 0.25 * input_dim # DHL podría ser interesante hacer este lengthscale más grande para dependencias más suaves.
         lengthscale_f  = 1.0
         lengthscale_x2 = 0.25 * input_dim
 
         alpha_x1  = 1.0
         alpha_f   = 1.0
         alpha_x1f = alpha_x1 * alpha_f
-        alpha_x2  = 0.0
+        alpha_x2  = 0.01
 
         nu_lin    = 1.0
 

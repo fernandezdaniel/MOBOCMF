@@ -8,7 +8,7 @@ from scipy.stats import norm
 from torch.utils.data import TensorDataset, DataLoader
 
 from mobocmf.models.mfdgp import MFDGP, TL
-from mobocmf.mlls.variational_elbo_mf import VariationalELBOMF
+from mobocmf.mlls.variational_elbo_mf_LBFGS import VariationalELBOMF_LBFGS
 from mobocmf.util.moop import MOOP, NotFeasiblePoints
 
 from copy import deepcopy
@@ -26,7 +26,7 @@ class MFDGPHandler():
         
         self.mfdgp = MFDGP(x_train, y_train, fidelities_train, num_fidelities=num_fidelities, type_lengthscale=type_lengthscale, previously_trained_model = previously_trained_model)
         self.mfdgp.double() # We use double precission to avoid numerical problems
-        self.elbo = VariationalELBOMF(self.mfdgp, x_train.shape[-2], num_fidelities=num_fidelities)
+        self.elbo = VariationalELBOMF_LBFGS(self.mfdgp, x_train.shape[-2], num_fidelities=num_fidelities, num_fixed_mc_samples = self.mfdgp.num_samples_for_acquisition)
 
         self.train_dataset = TensorDataset(x_train, y_train, fidelities_train)
         self.train_loader  = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True)
@@ -114,13 +114,13 @@ class BlackBoxMFDGPFitter():
 
             handler_obj.mfdgp.fix_variational_hypers(fix_variational_hypers)
 
-            l_opt_objs.append(torch.optim.Adam([ {'params': handler_obj.mfdgp.parameters()} ], lr=lr))
+            l_opt_objs.append(torch.optim.LBFGS([ {'params': handler_obj.mfdgp.parameters()} ], history_size = 10, max_iter = 20))
 
         for handler_con in self.mfdgp_handlers_cons.values():
 
             handler_con.mfdgp.fix_variational_hypers(fix_variational_hypers)
 
-            l_opt_cons.append(torch.optim.Adam([ {'params': handler_con.mfdgp.parameters()} ], lr=lr)) # Pasara qui los aprametros de todos los mdoelos (para el loss general)
+            l_opt_cons.append(torch.optim.LBFGS([ {'params': handler_con.mfdgp.parameters()} ], history_size = 10, max_iter = 20))
 
         for (handler_obj, optimizer, n_obj) in zip(self.mfdgp_handlers_objs.values(), l_opt_objs, np.arange(len(self.mfdgp_handlers_objs))):
             
@@ -128,15 +128,15 @@ class BlackBoxMFDGPFitter():
                 
                 loss_iter, kl_iter = func_update_model(handler_obj.mfdgp, handler_obj.elbo, optimizer, handler_obj.train_loader)
 
-                print("[OBJ: ", n_obj, "] Epoch:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), "\t KL per epoch:", kl_iter.item())
-            
+                print("[OBJ: ", n_obj, "] Iter:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), ". KL per epoch:", kl_iter.item())
+
         for (handler_con, optimizer, n_con) in zip(self.mfdgp_handlers_cons.values(), l_opt_cons, np.arange(len(self.mfdgp_handlers_cons))):
 
             for i in range(num_epochs):
                 
                 loss_iter, kl_iter = func_update_model(handler_con.mfdgp, handler_con.elbo, optimizer, handler_con.train_loader)
 
-                print("[CON: ", n_con, "] Epoch:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), "\t KL per epoch:", kl_iter.item())
+                print("[CON: ", n_con, "] Iter:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), ". KL per epoch:", kl_iter.item())
 
     def train_mfdgps(self):
 
@@ -147,15 +147,38 @@ class BlackBoxMFDGPFitter():
 
             for (x_batch, y_batch, fidelities) in train_loader:
 
-                with gpytorch.settings.num_likelihood_samples(1):
-                    optimizer.zero_grad()
-                    output = model(x_batch)
-                    res  = elbo(output, y_batch.T, fidelities)
-                    loss, kl = -res[0], res[1]
-                    loss.backward()
-                    optimizer.step()
-                    loss_iter += loss
-                    kl_iter += kl
+                def closure(output_kl = False):
+                    with gpytorch.settings.num_likelihood_samples(1):
+
+                        optimizer.zero_grad()
+
+                        # We replicate the data
+
+                        x_tile = x_batch.repeat_interleave(model.num_samples_for_acquisition, 0)
+                        y_tile = y_batch.repeat_interleave(model.num_samples_for_acquisition, 0)
+                        fidelities_tile = fidelities.repeat_interleave(model.num_samples_for_acquisition, 0)
+
+                        model.eval_mode()
+
+                        try:
+                            output = model(x_tile)
+                        except:
+                            import pdb; pdb.set_trace()
+
+                        model.train_mode()
+
+                        data_term, kl = elbo(output, y_tile.T, fidelities_tile)
+                        loss = -1.0 * (data_term - kl)
+                        loss.backward()
+
+                        if output_kl == True:
+                            return loss, kl
+                        else:
+                            return loss
+
+                optimizer.step(closure)
+
+                loss_iter, kl_iter = closure(output_kl = True)
 
             return loss_iter, kl_iter
         
@@ -163,7 +186,6 @@ class BlackBoxMFDGPFitter():
         self._train_mfdgp(_update_model, fix_variational_hypers=False, num_epochs=self.num_epochs_2, lr=self.lr_2)
 
         self.models_uncond_trained = True
-
       
     def sample_and_store_pareto_solution(self):
 
@@ -185,7 +207,7 @@ class BlackBoxMFDGPFitter():
                                     l_samples_cons,
                                     input_dim=inputs.shape[ 1 ],
                                     grid_size=self.opt_grid_size * inputs.shape[ 1 ],
-                                    pareto_set_size=self.pareto_set_size, feasible_values = -1.0 * self.thresholds_cons.numpy())
+                                    pareto_set_size=self.pareto_set_size)
 
             # self.pareto_set, self.pareto_front = global_optimizer.compute_pareto_solution_from_samples(inputs)
 

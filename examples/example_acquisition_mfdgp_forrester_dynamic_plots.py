@@ -147,7 +147,7 @@ save_pickle("./blackbox_mfdgp_fitters/", filename, blackbox_mfdgp_fitter)
 blackbox_mfdgp_uncond_fitter = read_pickle("./blackbox_mfdgp_fitters/", filename)
 blackbox_mfdgp_cond_fitter = read_pickle("./blackbox_mfdgp_fitters/", filename)
 
-jesmoc_mfdgp = JESMOC_MFDGP(model_uncond=blackbox_mfdgp_uncond_fitter, num_fidelities=num_fidelities,
+jesmoc_mfdgp = JESMOC_MFDGP(model=blackbox_mfdgp_uncond_fitter, num_fidelities=num_fidelities,
                             model_cond=blackbox_mfdgp_cond_fitter)
 jesmoc_mfdgp.add_blackbox(0, "obj1", is_constraint=False)
 jesmoc_mfdgp.add_blackbox(1, "obj1", is_constraint=False)

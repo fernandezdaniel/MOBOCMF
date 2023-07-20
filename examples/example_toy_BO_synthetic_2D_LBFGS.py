@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from copy import deepcopy
 from mobocmf.test_functions.forrester import forrester_mf1, forrester_mf0
 from mobocmf.test_functions.non_linear_sin import non_linear_sin_mf1, non_linear_sin_mf0
-from mobocmf.util.blackbox_mfdgp_fitter import BlackBoxMFDGPFitter
+from mobocmf.util.blackbox_mfdgp_fitter_LBFGS import BlackBoxMFDGPFitter
 from mobocmf.acquisition_functions.JESMOC_MFDGP import JESMOC_MFDGP
 from mobocmf.models.mfdgp import MFDGP
 
@@ -15,7 +15,8 @@ import sys; assert sys.version_info[1] >= 8
 import dill as pickle
 from botorch.optim.optimize import optimize_acqf
 
-SEED = 2
+torch.manual_seed(0)
+SEED = 0
 NUM_BO_ITERS = 100
 COST_HIGHER_FIDELITY=10
 np.random.seed(SEED)
@@ -34,19 +35,19 @@ fidelities = torch.from_numpy(fidelities)
 
 obj1 = MFDGP(x_train, y_train, fidelities, 2)
 low_fidelity_obj1, high_fidelity_obj1 = obj1.sample_function_from_prior_each_layer()
-#low_fidelity_obj1 = high_fidelity_obj1
+low_fidelity_obj1 = high_fidelity_obj1
 
 obj2 = MFDGP(x_train, y_train, fidelities, 2)
 low_fidelity_obj2, high_fidelity_obj2 = obj2.sample_function_from_prior_each_layer()
-#low_fidelity_obj2 = high_fidelity_obj2
+low_fidelity_obj2 = high_fidelity_obj2
 
 con1 = MFDGP(x_train, y_train, fidelities, 2)
 low_fidelity_con1, high_fidelity_con1 = con1.sample_function_from_prior_each_layer()
-#low_fidelity_con1 = high_fidelity_con1
+low_fidelity_con1 = high_fidelity_con1
 
 con2 = MFDGP(x_train, y_train, fidelities, 2)
 low_fidelity_con2, high_fidelity_con2 = con2.sample_function_from_prior_each_layer()
-#low_fidelity_con2 = high_fidelity_con2
+low_fidelity_con2 = high_fidelity_con2
 
 # We obtain the high fidelity dataset 
 
@@ -55,8 +56,8 @@ num_fidelities = 2
 num_inputs_high_fidelity = 5
 num_inputs_low_fidelity = 10
 
-num_epochs_1 = 5
-num_epochs_2 = 15
+num_epochs_1 = 500
+num_epochs_2 = 500
 
 lower_limit = 0.0
 upper_limit = 1.0
@@ -242,6 +243,7 @@ con2_mf1 = high_fidelity_con2(x_mf1).reshape((num_inputs_high_fidelity, 1))
 
 for iteration in range(NUM_BO_ITERS):
 
+
     obj1_train_mf0, obj1_train_mf1, obj1_y_mean, obj1_y_std = preprocess_outputs(obj1_mf0, obj1_mf1)
     obj2_train_mf0, obj2_train_mf1, obj2_y_mean, obj2_y_std = preprocess_outputs(obj2_mf0, obj2_mf1)
     con1_train_mf0, con1_train_mf1, con1_y_mean, con1_y_std = preprocess_outputs(con1_mf0, con1_mf1)
@@ -270,33 +272,33 @@ for iteration in range(NUM_BO_ITERS):
 
     previously_trained_model = None
 
-#    if iteration > 0:
-#        previously_trained_model = blackbox_mfdgp_fitter_previous_iteration.mfdgp_handlers_objs[ "obj1" ].mfdgp
+    if iteration > 0:
+        previously_trained_model = blackbox_mfdgp_fitter_previous_iteration.mfdgp_handlers_objs[ "obj1" ].mfdgp
 
     blackbox_mfdgp_fitter.initialize_mfdgp(x_train, obj1_y_train, fidelities,"obj1" , is_constraint=False, \
-           previously_trained_model = previously_trained_model)
+            previously_trained_model = previously_trained_model)
 
-#    if iteration > 0:
-#        previously_trained_model = blackbox_mfdgp_fitter_previous_iteration.mfdgp_handlers_objs[ "obj2" ].mfdgp
+    if iteration > 0:
+        previously_trained_model = blackbox_mfdgp_fitter_previous_iteration.mfdgp_handlers_objs[ "obj2" ].mfdgp
 
     blackbox_mfdgp_fitter.initialize_mfdgp(x_train, obj2_y_train, fidelities, "obj2", is_constraint=False, \
-           previously_trained_model = previously_trained_model)
+            previously_trained_model = previously_trained_model)
 
-#    if iteration > 0:
-#        previously_trained_model = blackbox_mfdgp_fitter_previous_iteration.mfdgp_handlers_cons[ "con1" ].mfdgp
+    if iteration > 0:
+        previously_trained_model = blackbox_mfdgp_fitter_previous_iteration.mfdgp_handlers_cons[ "con1" ].mfdgp
 
     blackbox_mfdgp_fitter.initialize_mfdgp(x_train, con1_y_train, fidelities, "con1", \
-       threshold_constraint = threshold_constraint_1, is_constraint=True, previously_trained_model = previously_trained_model)
+        threshold_constraint = threshold_constraint_1, is_constraint=True, previously_trained_model = previously_trained_model)
 
-#    if iteration > 0:
-#        previously_trained_model = blackbox_mfdgp_fitter_previous_iteration.mfdgp_handlers_cons[ "con2" ].mfdgp
+    if iteration > 0:
+        previously_trained_model = blackbox_mfdgp_fitter_previous_iteration.mfdgp_handlers_cons[ "con2" ].mfdgp
 
     blackbox_mfdgp_fitter.initialize_mfdgp(x_train, con2_y_train, fidelities, "con2", \
         threshold_constraint = threshold_constraint_2, is_constraint=True, previously_trained_model = previously_trained_model)
 
     ##########################################################################################################
     # Unconditioned training
-
+    
     blackbox_mfdgp_fitter.train_mfdgps()
 
     with open("toy_2D_synthetic/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d_iter_%d.dat"% (num_inputs_low_fidelity, \
@@ -306,7 +308,7 @@ for iteration in range(NUM_BO_ITERS):
 #    with open("toy_2D_synthetic/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d_iter_%d.dat" % (num_inputs_low_fidelity, \
 #        num_inputs_high_fidelity, num_epochs_1, num_epochs_2, iteration), "rb") as fr: \
 #        blackbox_mfdgp_fitter = pickle.load(fr)
-  
+   
     ##########################################################
 
     plot_black_box(blackbox_mfdgp_fitter.mfdgp_handlers_objs[ "obj1" ].mfdgp, low_fidelity_obj1, high_fidelity_obj1, 
@@ -331,7 +333,7 @@ for iteration in range(NUM_BO_ITERS):
     blackbox_mfdgp_fitter_previous_iteration = blackbox_mfdgp_fitter
     blackbox_mfdgp_fitter_cond = deepcopy(blackbox_mfdgp_fitter)
 
-    num_epochs_cond = 1
+    num_epochs_cond = 15
     blackbox_mfdgp_fitter_cond.num_epochs_1 = 0
     blackbox_mfdgp_fitter_cond.num_epochs_2 = num_epochs_cond
 
@@ -443,27 +445,6 @@ for iteration in range(NUM_BO_ITERS):
 
     ## We evaluate the candidate solutions in terms of hyper-volume and the optimal hyper-volume.
 
-#    # XXX DHL We resotre the mean and variance:
-#
-#    data_train = blackbox_mfdgp_fitter.mfdgp_handlers_objs[ "obj1" ].train_dataset.tensors[ 0 ]
-#
-#    obj1_values = high_fidelity_obj1(data_train.numpy())
-#    obj2_values = high_fidelity_obj2(data_train.numpy())
-#    con1_values = high_fidelity_con1(data_train.numpy())
-#    con2_values = high_fidelity_con2(data_train.numpy())
-#
-#    obj1_y_mean = np.mean(obj1_values)
-#    obj2_y_mean = np.mean(obj2_values)
-#    con1_y_mean = np.mean(con1_values)
-#    con2_y_mean = np.mean(con2_values)
-#
-#    obj1_y_std = np.std(obj1_values)
-#    obj2_y_std = np.std(obj2_values)
-#    con1_y_std = np.std(con1_values)
-#    con2_y_std = np.std(con2_values)
-#
-#    # XXX DHL We resotre the mean and variance:
-
     from pymoo.indicators.hv import HV
     
     grid = torch.from_numpy(numpy_grid_for_optimal_hv)
@@ -474,14 +455,6 @@ for iteration in range(NUM_BO_ITERS):
             pred_means_obj2 = blackbox_mfdgp_fitter.mfdgp_handlers_objs[ "obj2" ].mfdgp.predict_for_acquisition(grid, 1)[ 0 ]
             pred_means_con1, pred_vars_con1 = blackbox_mfdgp_fitter.mfdgp_handlers_cons[ "con1" ].mfdgp.predict_for_acquisition(grid, 1)
             pred_means_con2, pred_vars_con2 = blackbox_mfdgp_fitter.mfdgp_handlers_cons[ "con2" ].mfdgp.predict_for_acquisition(grid, 1)
-
-            pred_vars_con1 = pred_vars_con1 - blackbox_mfdgp_fitter.mfdgp_handlers_cons[ "con1" ].mfdgp.hidden_layer_likelihood_1.noise
-            pred_vars_con2 = pred_vars_con2 - blackbox_mfdgp_fitter.mfdgp_handlers_cons[ "con2" ].mfdgp.hidden_layer_likelihood_1.noise
-
-    con1_true_values = high_fidelity_con1(numpy_grid_for_optimal_hv)
-    con2_true_values = high_fidelity_con2(numpy_grid_for_optimal_hv)
-    obj1_true_values = high_fidelity_obj1(numpy_grid_for_optimal_hv)
-    obj2_true_values = high_fidelity_obj2(numpy_grid_for_optimal_hv)
 
     # We undo the standardization
 
@@ -494,40 +467,21 @@ for iteration in range(NUM_BO_ITERS):
 
     # We compute highly probable feasible points
     
-    dist = torch.distributions.normal.Normal(0, 1)
-    to_sel = (dist.cdf(pred_means_con1 / torch.sqrt(pred_vars_con1)) > 0.999) & (dist.cdf(pred_means_con2 / torch.sqrt(pred_vars_con2)) > 0.999)
+    dist = torch.distributions.normal.Normal(0, 1) 
+    to_sel = (dist.cdf(pred_means_con1 / torch.sqrt(pred_vars_con1)) > 0.95) & (dist.cdf(pred_means_con2 / torch.sqrt(pred_vars_con2)) > 0.95)
 
     feasible_pred_means_obj1 = pred_means_obj1[ to_sel ]
     feasible_pred_means_obj2 = pred_means_obj2[ to_sel ]
-    con1_true_values = con1_true_values[ to_sel ]
-    con2_true_values = con2_true_values[ to_sel ]
-    rec_pareto_set = numpy_grid_for_optimal_hv[ to_sel, : ]
 
     objectives = np.vstack((feasible_pred_means_obj1.numpy(), feasible_pred_means_obj2.numpy())).T
     index_optimal_points = compute_pareto_front(objectives)
-    rec_pareto_set = rec_pareto_set[ index_optimal_points, : ]
-
-    # We remove sub-optimal points. Otherwise it can provide better solutions than the optimal one.
-
-    con1_true_values = con1_true_values[ index_optimal_points ]
-    con2_true_values = con2_true_values[ index_optimal_points ]
-
-    feasible = not (np.any(con1_true_values < 0) or np.any(con2_true_values < 0))
-
-    num_optimal_points_ini = rec_pareto_set.shape[ 0 ]
-    rec_pareto_set = rec_pareto_set[ con1_true_values >= 0, : ]
-    rec_pareto_set = rec_pareto_set[ con2_true_values >= 0, : ]
-    num_optimal_points_fini = rec_pareto_set.shape[ 0 ]
-    num_infeasible = num_optimal_points_ini - num_optimal_points_fini
-
-    true_objective_values = np.vstack((high_fidelity_obj1(rec_pareto_set), high_fidelity_obj2(rec_pareto_set))).T
-
+    optimal_points = objectives[ index_optimal_points, : ]
     ind =  HV(ref_point=np.array([1000.0, 1000.0]))
-    hv_iter = ind(true_objective_values)
+    hv_iter = ind(optimal_points)
 
-    print("Iter:", iteration, "Pareto points found:", rec_pareto_set.shape[ 0 ], "HV recommendation:", hv_iter)
+    print("Iter:", iteration, "Pareto points found:", optimal_points.shape[ 0 ], "HV recommendation:", hv_iter)
 
-    # Now we compute optimal hypervolume
+    # Now we copute optimal hypervolume
 
     obj1_values = high_fidelity_obj1(numpy_grid_for_optimal_hv)
     obj2_values = high_fidelity_obj2(numpy_grid_for_optimal_hv)
@@ -546,8 +500,7 @@ for iteration in range(NUM_BO_ITERS):
     print("Iter:", iteration, "Optimal optimal_hv:", optimal_hv_iter)
 
     with open('hypervolumes.txt', 'a') as f:
-        print("%lf %lf %lf %lf %lf %lf" % (hv_iter, optimal_hv_iter, float(feasible), \
-            num_infeasible, num_optimal_points_fini, num_optimal_points_ini), file = f)
+        print("%lf %lf" % (hv_iter, optimal_hv_iter), file = f)
 
     with open('evaluations.txt', 'a') as f:
         print("%lf" % (fidelity_to_evaluate), file = f)

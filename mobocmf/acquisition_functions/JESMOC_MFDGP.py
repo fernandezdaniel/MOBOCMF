@@ -14,7 +14,6 @@ from botorch.utils import t_batch_mode_transform
 from mobocmf.util.blackbox_mfdgp_fitter import BlackBoxMFDGPFitter
 from mobocmf.models.mfdgp import MFDGP
 
-
 class _JES_MFDGP(AnalyticAcquisitionFunction):
     def __init__(
         self,
@@ -34,7 +33,6 @@ class _JES_MFDGP(AnalyticAcquisitionFunction):
 
         self.mfdgp_uncond = mfdgp_uncond
         self.mfdgp_cond = mfdgp_cond
-        
 
     # @t_batch_mode_transform(expected_q=1)
     def forward(self, X: Tensor) -> Tensor:
@@ -51,25 +49,28 @@ class _JES_MFDGP(AnalyticAcquisitionFunction):
             pred_means_cond, pred_variances_cond = self.mfdgp_cond.predict_for_acquisition(X, self.fidelity)
         self.mfdgp_cond.train()
 
-        return 0.5 * torch.clamp(torch.log(pred_variances_uncond) - torch.log(pred_variances_cond), min=0.0) # We add a small constant as jitter
+#        return 0.5 * torch.clamp(torch.log(pred_variances_uncond) - torch.log(pred_variances_cond), min=0.0) 
+        return torch.clamp(pred_variances_uncond - pred_variances_cond, min=0.0)
         
 
 class JESMOC_MFDGP():
     def __init__(
         self,
-        model_uncond: BlackBoxMFDGPFitter,
-        model_cond: BlackBoxMFDGPFitter = None,
+        model: BlackBoxMFDGPFitter,
         num_fidelities: int = 1,
+        model_cond: BlackBoxMFDGPFitter = None,
     ) -> None:
 
-        self.blackbox_mfdgp_fitter_uncond = model_uncond.copy_uncond()
+        self.blackbox_mfdgp_fitter_uncond = model.copy_uncond()
 
-        if model_cond is None:
-            self.pareto_set, self.pareto_front, self.samples_objs = model_uncond.sample_and_store_pareto_solution()
+        # We check if we are already given the conditioned models
 
-            model_uncond.train_conditioned_mfdgps()
+        if (model_cond is None):
+            self.pareto_set, self.pareto_front, self.samples_objs = model.sample_and_store_pareto_solution()
 
-            self.blackbox_mfdgp_fitter_cond = model_uncond
+            model.train_conditioned_mfdgps()
+
+            self.blackbox_mfdgp_fitter_cond = model
         else:
             self.pareto_set = model_cond.pareto_set
             self.pareto_front = model_cond.pareto_front
@@ -85,11 +86,10 @@ class JESMOC_MFDGP():
             self.objectives[ n_f ] = {}
             self.constraints[ n_f ] = {}
 
-    # def add_blackbox(self, mean, std, fidelity: int, blackbox_name: str, is_constraint=False):
     def add_blackbox(self, fidelity: int, blackbox_name: str, is_constraint=False):
             
-        mfdgp_uncond = self.blackbox_mfdgp_fitter_uncond.get_model(blackbox_name, is_constraint=is_constraint)
-        mfdgp_cond = self.blackbox_mfdgp_fitter_cond.get_model(blackbox_name, is_constraint=is_constraint)
+        mfdgp_uncond = self.blackbox_mfdgp_fitter_uncond.get_model(blackbox_name, is_constraint=is_constraint )
+        mfdgp_cond = self.blackbox_mfdgp_fitter_cond.get_model(blackbox_name, is_constraint=is_constraint )
 
         jes_mfdgp = _JES_MFDGP(fidelity, mfdgp_uncond, mfdgp_cond)
 
@@ -118,4 +118,5 @@ class JESMOC_MFDGP():
             acq += con(X)
 
         return acq
+
 

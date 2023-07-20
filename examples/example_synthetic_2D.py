@@ -14,6 +14,8 @@ from mobocmf.models.mfdgp import MFDGP
 import sys; assert sys.version_info[1] >= 8
 import dill as pickle
 
+import pdb; pdb.set_trace()
+
 np.random.seed(0)
 
 # We generate fake data to build a model to sample from the prior
@@ -115,9 +117,9 @@ blackbox_mfdgp_fitter.initialize_mfdgp(x_train, con2_y_train, fidelities, "con2"
 ##########################################################################################################
 # Unconditioned training
 
-#blackbox_mfdgp_fitter.train_mfdgps()
+# blackbox_mfdgp_fitter.train_mfdgps()
 
-#with open("blackbox_mfdgp_fitters_synthetic_2D/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "wb") as fw:
+# with open("blackbox_mfdgp_fitters_synthetic_2D/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "wb") as fw:
 #    pickle.dump(blackbox_mfdgp_fitter, fw)
 
 with open("blackbox_mfdgp_fitters_synthetic_2D/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "rb") as fr:
@@ -140,8 +142,8 @@ def compute_moments_mfdgp(mfdgp, inputs, mean, std, fidelity, num_samples=1000):
     for i in range(num_samples):
         with gpytorch.settings.num_likelihood_samples(1):
             pred_means, pred_variances = mfdgp.predict(inputs, fidelity)
-            samples[ i : (i + 1), : ] = np.random.normal(size = pred_means.numpy().shape) * \
-                    np.sqrt(pred_variances.numpy()) + pred_means.numpy()
+            samples[ i : (i + 1), : ] = np.random.normal(size = pred_means.detach().numpy().shape) * \
+                    np.sqrt(pred_variances.detach().numpy()) + pred_means.detach().numpy()
 
     pred_mean = np.mean(samples, 0) * std + mean
     pred_std  = np.std(samples, 0) * std
@@ -250,18 +252,19 @@ plot_black_box(blackbox_mfdgp_fitter.mfdgp_handlers_cons[ "con2" ].mfdgp, low_fi
 
 pareto_set, pareto_front, sampled_objectives, sampled_cons = blackbox_mfdgp_fitter.sample_and_store_pareto_solution()
 
-blackbox_mfdgp_fitter_cond = deepcopy(blackbox_mfdgp_fitter)
+# blackbox_mfdgp_fitter_cond = deepcopy(blackbox_mfdgp_fitter)
+blackbox_mfdgp_fitter_cond = blackbox_mfdgp_fitter.copy_uncond()
 
 num_epochs_cond = 15000
 blackbox_mfdgp_fitter_cond.num_epochs_1 = 0
 blackbox_mfdgp_fitter_cond.num_epochs_2 = num_epochs_cond
 
-#blackbox_mfdgp_fitter_cond.train_conditioned_mfdgps() 
+# blackbox_mfdgp_fitter_cond.train_conditioned_mfdgps() 
 
-#with open("blackbox_mfdgp_fitters_2D/mfdgp_cond_%dxmf0_%dxmf1_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_cond), "wb") as fw:
+# with open("blackbox_mfdgp_fitters_2D/mfdgp_cond_%dxmf0_%dxmf1_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_cond), "wb") as fw:
 #    pickle.dump(blackbox_mfdgp_fitter_cond, fw)
 
-#with open("blackbox_mfdgp_fitters_2D/mfdgp_sampled_solution_%dxmf0_%dxmf1_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_cond), "wb") as fw:
+# with open("blackbox_mfdgp_fitters_2D/mfdgp_sampled_solution_%dxmf0_%dxmf1_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_cond), "wb") as fw:
 #    pickle.dump((pareto_set, pareto_front, sampled_objectives, sampled_cons), fw)
 
 with open("blackbox_mfdgp_fitters_2D/mfdgp_cond_%dxmf0_%dxmf1_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_cond), "rb") as fr:
