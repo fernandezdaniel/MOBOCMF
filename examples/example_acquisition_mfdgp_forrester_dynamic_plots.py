@@ -8,7 +8,7 @@ import dill as pickle
 from mobocmf.test_functions.forrester import forrester_mf1, forrester_mf0
 from mobocmf.test_functions.non_linear_sin import non_linear_sin_mf1, non_linear_sin_mf0
 from mobocmf.models.mfdgp import TL
-from mobocmf.util.blackbox_mfdgp_fitter_plot import BlackBoxMFDGPFitterPlot
+from mobocmf.util.blackbox_mfdgp_fitter_plot_old import BlackBoxMFDGPFitterPlot
 from mobocmf.acquisition_functions.JESMOC_MFDGP import JESMOC_MFDGP
 
 from mobocmf.util.util import create_path, save_pickle, read_pickle

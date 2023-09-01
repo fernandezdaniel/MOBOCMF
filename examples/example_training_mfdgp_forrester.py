@@ -132,7 +132,7 @@ def compute_moments_mfdgp(mfdgp, inputs, mean, std, fidelity):
     pred_mean = pred_means * std + mean
     pred_std  = np.sqrt(pred_variances) * std
 
-    return pred_mean.numpy(), pred_std.numpy()
+    return pred_mean.numpy()[ 0 ], pred_std.numpy()[ 0 ]
 
 def plot_black_box(inputs,
                    func_mf0, func_mf1,

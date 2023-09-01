@@ -160,7 +160,7 @@ def plot_black_box(mfdgp, func_mf0, func_mf1, x_train, y_train, fidelities, y_me
         ax[ 2, 0 ].plot(pareto_set[ : , 0 ], pareto_set[ :, 1 ], color='green', marker='+', markersize=10, linestyle='None')
     CS = ax[ 2, 0 ].contour(numpy_grid[ 0 : 25 , 0 ], numpy_grid[ 0 : 25 , 0] , pred_mean_mf1.reshape((25, 25)))
     plt.clabel(CS, inline=1, fontsize=10)
-    ax[ 2, 0 ].set_title("Pred Mean Hihg Fidelity " + name, fontsize = 8)
+    ax[ 2, 0 ].set_title("Pred Mean High Fidelity " + name, fontsize = 8)
  
     ax[ 2, 1 ].plot(x_train[ fidelities[ :, 0 ] == 1, 0 ], x_train[ fidelities[ :, 0 ] == 1, 1 ], color='red', marker='o', markersize=10, linestyle='None')
     if pareto_set is not None:

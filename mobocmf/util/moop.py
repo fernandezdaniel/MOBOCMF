@@ -122,8 +122,9 @@ class MOOP():
         
         # logging.debug('SLSQP failed two times when optimizing x*')
         return None
-
-    def _compute_pareto_front(self, pts): # Corresponds to _cull_algorithm() function of Spearmint
+    
+    @classmethod
+    def compute_pareto_front(cls, pts): # Corresponds to _cull_algorithm() function of Spearmint
 
         n_points = pts.shape[ 0 ]
 
@@ -160,7 +161,7 @@ class MOOP():
 
         # We obtain the indices of the pareto front given the set 'pts'
         
-        mask_pareto_front = self._compute_pareto_front(pts)
+        mask_pareto_front = MOOP.compute_pareto_front(pts)
         
         # We undo the sorting to return the mask in the same order in which 'pts' was given
         

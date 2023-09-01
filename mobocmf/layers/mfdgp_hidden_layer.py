@@ -235,11 +235,12 @@ class MFDGPHiddenLayer(DeepGPLayer):
         theta = self._rff_sample_posterior_weights(y_data[:, 0], S_data, Phi)
         
         def wrapper(x, gradient=False):
-            if gradient: # The gradient computation is not prepared for broadcasting
-                assert x.shape[ 0 ] == 1
 
             if x.ndim == 1:
                 x = x[ None, : ]
+
+            if gradient: # The gradient computation is not prepared for broadcasting
+                assert x.shape[ 0 ] == 1
 
             features = self._phi_rbf(x, W, b, alpha, nFeatures, gradient=gradient)
             return theta @ features
@@ -259,11 +260,12 @@ class MFDGPHiddenLayer(DeepGPLayer):
         theta = np.random.normal(loc=0., scale=1., size=nFeatures)
 
         def wrapper(x, gradient=False):
-            if gradient: # The gradient computation is not prepared for broadcasting
-                assert x.shape[ 0 ] == 1
 
             if x.ndim == 1:
                 x = x[ None, : ]
+
+            if gradient: # The gradient computation is not prepared for broadcasting
+                assert x.shape[ 0 ] == 1
 
             features = self._phi_rbf(x, W, b, alpha, nFeatures, gradient=gradient)
             return theta @ features
@@ -394,7 +396,7 @@ class MFDGPHiddenLayer(DeepGPLayer):
                 features_x1f = self._phi_rbf(xf, W_x1f, b_x1f, alpha_x1f, nFeatures, gradient=False)
                 features_x2  = self._phi_rbf(x,  W_x2,  b_x2,  alpha_x2, nFeatures, gradient=False)
 
-                df_dx = sample_from_posterior_last_layer(x, gradient=True)
+                df_dx = sample_from_prior_last_layer(x, gradient=True)
 
                 dfeatures_xf_dx = np.concatenate([np.eye(x.shape[ 1 ]), df_dx[:,None]], axis=1)
 

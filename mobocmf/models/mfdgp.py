@@ -158,9 +158,9 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
         self._eval_mode = True
 
 
-    def forward(self, inputs, max_fidelity=None):
+    def forward(self, inputs, fidelity_layer=None):
 
-        num_layers = self.num_hidden_layers if max_fidelity is None else max_fidelity + 1
+        num_layers = self.num_hidden_layers if fidelity_layer is None else fidelity_layer + 1
 
         # We propagate data through the layers and return all layers outputs
 
@@ -213,7 +213,7 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
         variances = []
 
         likelihood = getattr(self, self.name_hidden_layer_likelihood + str(fidelity_layer))
-        preds = likelihood(self(test_x, max_fidelity=fidelity_layer)[ fidelity_layer ]) # DFS: Changed, ask  DHL before: likelihood(self(test_x)[ fidelity_layer ])
+        preds = likelihood(self(test_x, fidelity_layer=fidelity_layer)[ fidelity_layer ]) # DFS: Changed, ask  DHL before: likelihood(self(test_x)[ fidelity_layer ])
         mus.append(preds.mean)
         variances.append(preds.variance)
 
@@ -245,6 +245,25 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
         vars = second_moment - mus**2
 
         return mus, vars
+
+    def sample_function_from_layer_0(self):
+            
+        hidden_layer = getattr(self, self.name_hidden_layer + "0")
+        
+        return hidden_layer.sample_from_posterior(self.input_dims, None)
+
+    def sample_function_from_layer(self, num_layer):
+
+        result = []
+        sample_from_posterior_last_layer = None
+        
+        for i in range(num_layer + 1):
+            hidden_layer = getattr(self, self.name_hidden_layer + str(i))
+            sample = hidden_layer.sample_from_posterior(self.input_dims, sample_from_posterior_last_layer)
+            sample_from_posterior_last_layer = sample
+            result.append(sample)
+
+        return result[ num_layer ]
 
     def sample_function_from_each_layer(self):
 

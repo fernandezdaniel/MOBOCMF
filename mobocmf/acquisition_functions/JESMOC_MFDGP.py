@@ -14,6 +14,8 @@ from botorch.utils import t_batch_mode_transform
 from mobocmf.util.blackbox_mfdgp_fitter import BlackBoxMFDGPFitter
 from mobocmf.models.mfdgp import MFDGP
 
+from botorch.optim.optimize import optimize_acqf
+
 class _JES_MFDGP(AnalyticAcquisitionFunction):
     def __init__(
         self,
@@ -59,7 +61,13 @@ class JESMOC_MFDGP():
         model: BlackBoxMFDGPFitter,
         num_fidelities: int = 1,
         model_cond: BlackBoxMFDGPFitter = None,
+        standard_bounds = None,
+        fix_eval_fidelity_0: bool = False,
     ) -> None:
+        
+        self.standard_bounds = standard_bounds
+
+        self.fix_eval_fidelity_0 = fix_eval_fidelity_0
 
         self.blackbox_mfdgp_fitter_uncond = model.copy_uncond()
 
@@ -82,11 +90,15 @@ class JESMOC_MFDGP():
 
         self.objectives = {}
         self.constraints = {}
+        self.costs_blackboxes = {}
         for n_f in range(0, num_fidelities):
             self.objectives[ n_f ] = {}
             self.constraints[ n_f ] = {}
+            
+            self.costs_blackboxes[ n_f ] = {}            
+            self.costs_blackboxes[ n_f ][ "total" ] = 0.0
 
-    def add_blackbox(self, fidelity: int, blackbox_name: str, is_constraint=False):
+    def add_blackbox(self, fidelity: int, blackbox_name: str, cost_evaluation: float = 1.0, is_constraint=False):
             
         mfdgp_uncond = self.blackbox_mfdgp_fitter_uncond.get_model(blackbox_name, is_constraint=is_constraint )
         mfdgp_cond = self.blackbox_mfdgp_fitter_cond.get_model(blackbox_name, is_constraint=is_constraint )
@@ -98,25 +110,68 @@ class JESMOC_MFDGP():
         else:
             self.objectives[ fidelity ][ blackbox_name ] = jes_mfdgp
 
+        self.costs_blackboxes[ fidelity ][ "total" ] += cost_evaluation
+        self.costs_blackboxes[ fidelity ][ blackbox_name ] = cost_evaluation
+
         return jes_mfdgp
     
     def decoupled_acq(self, X: Tensor, fidelity: int, blackbox_name: str, is_constraint=True) -> Tensor:
 
         if is_constraint:
-            return self.constraints[ fidelity ][ blackbox_name ](X)
+            return self.constraints[ fidelity ][ blackbox_name ](X.double()) # / self.costs_blackboxes[ fidelity ][ blackbox_name ]
         else:
-            return self.objectives[ fidelity ][ blackbox_name ](X)
+            return self.objectives[ fidelity ][ blackbox_name ](X.double()) # / self.costs_blackboxes[ fidelity ][ blackbox_name ]
     
     def coupled_acq(self, X: Tensor, fidelity: int) -> Tensor:
 
         acq = torch.zeros(size=(X.shape[ 0 ],))
 
-        for obj in self.objectives[ fidelity ].values():
-            acq += obj(X)
+        for name_obj, obj in self.objectives[ fidelity ].items():
+            acq += obj(X.double()) # / self.costs_blackboxes[ fidelity ][ name_obj ]
 
-        for con in self.constraints[ fidelity ].values():
-            acq += con(X)
+        for name_con, con in self.constraints[ fidelity ].items():
+            acq += con(X.double()) # / self.costs_blackboxes[ fidelity ][ name_con ]
 
         return acq
+
+    def get_nextpoint_coupled_fidelity_0(self, iteration=None, verbose=False):
+
+        assert self.fix_eval_fidelity_0
+        assert (iteration is not None)
+
+        fidelity_to_evaluate = 0
+        current_candidate, current_value = optimize_acqf(acq_function=lambda x: self.coupled_acq(x, fidelity=0), bounds=self.standard_bounds,
+            q=1, num_restarts=5, raw_samples=200,  options={"maxiter": 200})
+        current_value_weighted = current_value / self.costs_blackboxes[ 0 ][ "total" ]
+
+        nextpoint = current_candidate[ 0, : ]
+        if verbose: print("Iter:", iteration, "Acquisition: " + str(current_value_weighted.numpy()) + " Evaluating fidelity", fidelity_to_evaluate, "at", nextpoint.numpy())
+
+        return nextpoint, fidelity_to_evaluate
+
+    def get_nextpoint_coupled(self, iteration=None, verbose=False):
+
+        assert self.fix_eval_fidelity_0 == False
+        assert (iteration is not None)
+
+        current_value_weighted = 0.0
+        
+        for fidelity in range(self.num_fidelities):
+
+            new_candidate, new_values = optimize_acqf(acq_function=lambda x: self.coupled_acq(x, fidelity=fidelity), bounds=self.standard_bounds,
+                q=1, num_restarts=5, raw_samples=200,  options={"maxiter": 200})
+            
+            new_values_weighted = new_values / self.costs_blackboxes[ fidelity ][ "total" ]
+            
+            if (fidelity == 0) or (current_value_weighted < new_values_weighted):
+
+                fidelity_to_evaluate = fidelity
+                current_value_weighted = new_values_weighted
+                current_candidate = new_candidate
+
+        nextpoint = current_candidate[ 0, : ]
+        if verbose: print("Iter:", iteration, "Acquisition: " + str(current_value_weighted.numpy()) + " Evaluating fidelity", fidelity_to_evaluate, "at", nextpoint.numpy())
+
+        return nextpoint, fidelity_to_evaluate
 
 
