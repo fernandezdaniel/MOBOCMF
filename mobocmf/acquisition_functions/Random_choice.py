@@ -33,19 +33,23 @@ class Random_choice():
         self.coupled_costs_fidelities[ fidelity ] += cost_evaluation
         self.total_cost_fidelities += cost_evaluation
     
-    def decoupled_acq(self, X: Tensor) -> Tensor:
+    def decoupled_acq(self, X: Tensor, fidelity: int, blackbox_name) -> Tensor:
 
-        return torch.rand(size=X.shape)
+        return torch.rand(size=(X.shape[ 0 ], ))
     
-    def coupled_acq(self, X: Tensor) -> Tensor:
+    def coupled_acq(self, X: Tensor, fidelity: int) -> Tensor:
 
-        return torch.rand(size=X.shape)
+        return torch.rand(size=(X.shape[ 0 ], ))
 
-    def get_nextpoint_coupled(self) -> Tensor:
+    def get_nextpoint_coupled(self, iteration=None, verbose=False) -> Tensor:
 
         fidelities = torch.arange(self.num_fidelities)
         probs_fidelities = self.coupled_costs_fidelities / self.total_cost_fidelities
 
-        return torch.rand(size=(1, self.input_size)), fidelities[ torch.multinomial(probs_fidelities, 1).item() ]
+        nextpoint = torch.rand(size=(self.input_size, ))
+        fidelity_to_evaluate = fidelities[ torch.multinomial(probs_fidelities, 1).item() ].item()
 
+        if verbose: print("Iter:", iteration, " Evaluating fidelity", fidelity_to_evaluate, "at", nextpoint.numpy())
+
+        return nextpoint, fidelity_to_evaluate
 

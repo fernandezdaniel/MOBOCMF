@@ -132,7 +132,7 @@ class JESMOC_MFDGP():
 
         return acq
 
-    def _get_nextpoint_coupled_highest_fidelity(self, iteration=None, verbose=False):
+    def _get_nextpoint_coupled_highest_fidelity(self, iteration=None, verbose=False) -> Tensor:
 
         if verbose: assert (iteration is not None)
 
@@ -146,7 +146,7 @@ class JESMOC_MFDGP():
 
         return nextpoint, fidelity_to_evaluate
 
-    def _get_nextpoint_coupled(self, iteration=None, verbose=False):
+    def _get_nextpoint_coupled(self, iteration=None, verbose=False) -> Tensor:
 
         if verbose: assert (iteration is not None)
 
@@ -170,7 +170,7 @@ class JESMOC_MFDGP():
 
         return nextpoint, fidelity_to_evaluate
 
-    def get_nextpoint_coupled(self, iteration=None, verbose=False):
+    def get_nextpoint_coupled(self, iteration=None, verbose=False) -> Tensor:
 
         if self.eval_highest_fidelity:
             return self._get_nextpoint_coupled_highest_fidelity(iteration=iteration, verbose=verbose)
