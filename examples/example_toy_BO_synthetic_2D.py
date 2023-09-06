@@ -515,7 +515,7 @@ for iteration in range(NUM_BO_ITERS):
     feasible = not (np.any(con1_true_values < 0) or np.any(con2_true_values < 0))
 
     num_optimal_points_ini = rec_pareto_set.shape[ 0 ]
-    rec_pareto_set = rec_pareto_set[ con1_true_values >= 0, : ]
+    rec_pareto_set = rec_pareto_set[ con1_true_values >= 0, : ] # DFS: Da error si no se encuentran puntos validos
     rec_pareto_set = rec_pareto_set[ con2_true_values >= 0, : ]
     num_optimal_points_fini = rec_pareto_set.shape[ 0 ]
     num_infeasible = num_optimal_points_ini - num_optimal_points_fini

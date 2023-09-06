@@ -412,3 +412,4 @@ plot_acquisition(spacing, acq_all_f1, 'coupled f=1', "acq_mfdgp_all_f1_iters1_it
 import pdb; pdb.set_trace()
 
 # La distrib_cond debe ser compatible con los datos observados, la frontera y cumplir las cons
+

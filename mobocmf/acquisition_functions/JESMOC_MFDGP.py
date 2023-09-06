@@ -29,14 +29,12 @@ class _JES_MFDGP(AnalyticAcquisitionFunction):
         
         super(AnalyticAcquisitionFunction, self).__init__(model)
         
-        # self.mean = mean
-        # self.std = std
         self.fidelity = fidelity
 
         self.mfdgp_uncond = mfdgp_uncond
         self.mfdgp_cond = mfdgp_cond
 
-    # @t_batch_mode_transform(expected_q=1)
+    #@t_batch_mode_transform(expected_q=1)
     def forward(self, X: Tensor) -> Tensor:
         """Evaluate JES_FMDGP
         """
@@ -62,12 +60,12 @@ class JESMOC_MFDGP():
         num_fidelities: int = 1,
         model_cond: BlackBoxMFDGPFitter = None,
         standard_bounds = None,
-        fix_eval_fidelity_0: bool = False,
+        eval_highest_fidelity: bool = False,
     ) -> None:
         
         self.standard_bounds = standard_bounds
 
-        self.fix_eval_fidelity_0 = fix_eval_fidelity_0
+        self.eval_highest_fidelity = eval_highest_fidelity
 
         self.blackbox_mfdgp_fitter_uncond = model.copy_uncond()
 
@@ -118,29 +116,28 @@ class JESMOC_MFDGP():
     def decoupled_acq(self, X: Tensor, fidelity: int, blackbox_name: str, is_constraint=True) -> Tensor:
 
         if is_constraint:
-            return self.constraints[ fidelity ][ blackbox_name ](X.double()) # / self.costs_blackboxes[ fidelity ][ blackbox_name ]
+            return self.constraints[ fidelity ][ blackbox_name ](X.double()) / self.costs_blackboxes[ fidelity ][ blackbox_name ]
         else:
-            return self.objectives[ fidelity ][ blackbox_name ](X.double()) # / self.costs_blackboxes[ fidelity ][ blackbox_name ]
+            return self.objectives[ fidelity ][ blackbox_name ](X.double()) / self.costs_blackboxes[ fidelity ][ blackbox_name ]
     
     def coupled_acq(self, X: Tensor, fidelity: int) -> Tensor:
 
         acq = torch.zeros(size=(X.shape[ 0 ],))
 
         for name_obj, obj in self.objectives[ fidelity ].items():
-            acq += obj(X.double()) # / self.costs_blackboxes[ fidelity ][ name_obj ]
+            acq += obj(X.double()) / self.costs_blackboxes[ fidelity ][ name_obj ]
 
         for name_con, con in self.constraints[ fidelity ].items():
-            acq += con(X.double()) # / self.costs_blackboxes[ fidelity ][ name_con ]
+            acq += con(X.double()) / self.costs_blackboxes[ fidelity ][ name_con ]
 
         return acq
 
-    def get_nextpoint_coupled_fidelity_0(self, iteration=None, verbose=False):
+    def _get_nextpoint_coupled_highest_fidelity(self, iteration=None, verbose=False):
 
-        assert self.fix_eval_fidelity_0
-        assert (iteration is not None)
+        if verbose: assert (iteration is not None)
 
-        fidelity_to_evaluate = 0
-        current_candidate, current_value = optimize_acqf(acq_function=lambda x: self.coupled_acq(x, fidelity=0), bounds=self.standard_bounds,
+        fidelity_to_evaluate = self.num_fidelities - 1
+        current_candidate, current_value = optimize_acqf(acq_function=lambda x: self.coupled_acq(x, fidelity=(self.num_fidelities - 1)), bounds=self.standard_bounds,
             q=1, num_restarts=5, raw_samples=200,  options={"maxiter": 200})
         current_value_weighted = current_value / self.costs_blackboxes[ 0 ][ "total" ]
 
@@ -149,10 +146,9 @@ class JESMOC_MFDGP():
 
         return nextpoint, fidelity_to_evaluate
 
-    def get_nextpoint_coupled(self, iteration=None, verbose=False):
+    def _get_nextpoint_coupled(self, iteration=None, verbose=False):
 
-        assert self.fix_eval_fidelity_0 == False
-        assert (iteration is not None)
+        if verbose: assert (iteration is not None)
 
         current_value_weighted = 0.0
         
@@ -173,5 +169,13 @@ class JESMOC_MFDGP():
         if verbose: print("Iter:", iteration, "Acquisition: " + str(current_value_weighted.numpy()) + " Evaluating fidelity", fidelity_to_evaluate, "at", nextpoint.numpy())
 
         return nextpoint, fidelity_to_evaluate
+
+    def get_nextpoint_coupled(self, iteration=None, verbose=False):
+
+        if self.eval_highest_fidelity:
+            return self._get_nextpoint_coupled_highest_fidelity(iteration=iteration, verbose=verbose)
+
+        else:
+            return self._get_nextpoint_coupled(iteration=iteration, verbose=verbose)
 
 

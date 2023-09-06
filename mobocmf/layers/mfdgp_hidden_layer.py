@@ -261,8 +261,8 @@ class MFDGPHiddenLayer(DeepGPLayer):
 
         def wrapper(x, gradient=False):
 
-            if x.ndim == 1:
-                x = x[ None, : ]
+            if x.ndim == 1:      # XXX DFS: Rev
+                x = x[ None, : ] # XXX DFS: Rev
 
             if gradient: # The gradient computation is not prepared for broadcasting
                 assert x.shape[ 0 ] == 1
@@ -326,7 +326,7 @@ class MFDGPHiddenLayer(DeepGPLayer):
                 features_x1f = self._phi_rbf(xf, W_x1f, b_x1f, alpha_x1f, nFeatures, gradient=False)
                 features_x2  = self._phi_rbf(x,  W_x2,  b_x2,  alpha_x2, nFeatures, gradient=False)
 
-                df_dx = sample_from_posterior_last_layer(x, gradient=True)
+                df_dx = sample_from_posterior_last_layer(x, gradient=True) # XXX DFS: Rev
 
                 dfeatures_xf_dx = np.concatenate([np.eye(x.shape[ 1 ]), df_dx[:,None]], axis=1)
 

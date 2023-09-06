@@ -17,12 +17,16 @@ class TL(Enum): # Type of lengthscale
 
 class MFDGP(DeepGP): # modos entrenar() y eval()
 
-    def __init__(self, x_train, y_train, fidelities, num_fidelities, type_lengthscale=TL.MEDIAN, num_samples_for_acquisition = 25, previously_trained_model = None):
+    def __init__(self, x_train, y_train, fidelities, num_fidelities,
+                 type_lengthscale=TL.MEDIAN, num_samples_for_acquisition=25,
+                 previously_trained_model=None, use_only_highest_fidelity=False):
 
         hidden_layers = []
 
         self._eval_mode = False
         self.num_samples_for_acquisition = num_samples_for_acquisition
+
+        self.use_only_highest_fidelity = use_only_highest_fidelity
 
         self.input_dims = x_train.shape[ -1 ]
         y_high_std = np.std(y_train[ (fidelities == num_fidelities - 1).flatten() ].numpy())
@@ -64,8 +68,12 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
             #inducing_values = y_train[ to_sel, : ].flatten() #* 0.0
 
             #inducing_points, inducing_values = self.find_good_initial_inducing_points_and_values(x_train, y_train, fidelities, i)
-            inducing_points = torch.cat((inducing_points_0, inducing_values_0[:,None]), 1)
-            inducing_values = inducing_values_0
+            if self.use_only_highest_fidelity:
+                inducing_points = torch.cat((inducing_points_0, 0.0 * inducing_values_0[ : , None]), 1)
+                inducing_values = inducing_values_0            
+            else:
+                inducing_points = torch.cat((inducing_points_0, inducing_values_0[ : , None]), 1)
+                inducing_values = inducing_values_0
 
             # fid_sel = (fidelities == i).flatten()
             # inducing_values = self.clip_inducing_values(x_train[ to_sel, : ], x_train[ fid_sel, : ], y_train[ fid_sel, : ].flatten())
@@ -158,9 +166,9 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
         self._eval_mode = True
 
 
-    def forward(self, inputs, fidelity_layer=None):
+    def forward(self, inputs, max_fidelity=None):
 
-        num_layers = self.num_hidden_layers if fidelity_layer is None else fidelity_layer + 1
+        num_layers = self.num_hidden_layers if max_fidelity is None else max_fidelity + 1
 
         # We propagate data through the layers and return all layers outputs
 
@@ -173,6 +181,8 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
             if i == 0:
                 output_layer = hidden_layer(inputs)
             else:
+                output_layer = output_layer * 0.0 if self.use_only_highest_fidelity else output_layer
+
                 output_layer = hidden_layer(inputs, output_layer)
 
             l_outputs[ i ] = output_layer
@@ -213,7 +223,7 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
         variances = []
 
         likelihood = getattr(self, self.name_hidden_layer_likelihood + str(fidelity_layer))
-        preds = likelihood(self(test_x, fidelity_layer=fidelity_layer)[ fidelity_layer ]) # DFS: Changed, ask  DHL before: likelihood(self(test_x)[ fidelity_layer ])
+        preds = likelihood(self(test_x, max_fidelity=fidelity_layer)[ fidelity_layer ]) # DFS: Changed, ask  DHL before: likelihood(self(test_x)[ fidelity_layer ])
         mus.append(preds.mean)
         variances.append(preds.variance)
 
@@ -245,25 +255,6 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
         vars = second_moment - mus**2
 
         return mus, vars
-
-    def sample_function_from_layer_0(self):
-            
-        hidden_layer = getattr(self, self.name_hidden_layer + "0")
-        
-        return hidden_layer.sample_from_posterior(self.input_dims, None)
-
-    def sample_function_from_layer(self, num_layer):
-
-        result = []
-        sample_from_posterior_last_layer = None
-        
-        for i in range(num_layer + 1):
-            hidden_layer = getattr(self, self.name_hidden_layer + str(i))
-            sample = hidden_layer.sample_from_posterior(self.input_dims, sample_from_posterior_last_layer)
-            sample_from_posterior_last_layer = sample
-            result.append(sample)
-
-        return result[ num_layer ]
 
     def sample_function_from_each_layer(self):
 
@@ -308,7 +299,25 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
                 temporal_data = torch.cat((x_train[ fidelities[ :, 0 ] == 0, : ], inducing_points[ i : (i + 1), : ]), 0)
                 to_sel = torch.argmin(compute_dist(temporal_data)[ 0 : (temporal_data.shape[ 0 ] - 1), temporal_data.shape[ 0 ] - 1])
                 inducing_values[ i ] = y_train[ fidelities[ :, 0 ] == 0 , : ][ to_sel ]
+        
+        elif self.use_only_highest_fidelity == False:
 
+            # We sample uniformly in the unit box the inducing points
+
+            inducing_points = torch.rand(size = ((num_inducing_points, x_train.shape[ 1 ])))
+            inducing_values = torch.ones(num_inducing_points)
+            inducing_values_previous_layer = torch.zeros(num_inducing_points)
+
+            # We set the initial inducing values to the targets of the closest point for that fidelity
+            
+            for i in range(num_inducing_points):
+                temporal_data = torch.cat((x_train[ fidelities[ :, 0 ] == layer, : ], inducing_points[ i : (i + 1), : ]), 0)
+                to_sel = torch.argmin(compute_dist(temporal_data)[ 0 : (temporal_data.shape[ 0 ] - 1), temporal_data.shape[ 0 ] - 1])
+                inducing_values[ i ] = y_train[ fidelities[ :, 0 ] == layer , : ][ to_sel ]
+
+            inducing_points = torch.cat((inducing_points, inducing_values_previous_layer[ : , None ]), 1)
+
+        
         else:
 
             # We sample uniformly in the unit box the inducing points
@@ -333,7 +342,6 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
             inducing_points = torch.cat((inducing_points, inducing_values_previous_layer[ : , None ]), 1)
 
         return inducing_points, inducing_values
-
 
 
 

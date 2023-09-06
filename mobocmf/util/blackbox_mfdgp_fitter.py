@@ -37,8 +37,7 @@ class MFDGPHandler():
 class BlackBoxMFDGPFitter():
 
     def __init__(self, num_fidelities, batch_size, lr_1=0.003, lr_2=0.001, num_epochs_1=5000, num_epochs_2=15000,
-                 pareto_set_size=50, opt_grid_size=1000, eps=1e-8, decoupled_evals=False, type_lengthscale=TL.MEDIAN,
-                 fit_only_fidelity_0=False):
+                 pareto_set_size=50, opt_grid_size=1000, eps=1e-8, decoupled_evals=False, type_lengthscale=TL.MEDIAN):
         
         # assert decoupled_evals is False, "This object is not currently prepared for a decoupled evaluation setting."
 
@@ -76,8 +75,6 @@ class BlackBoxMFDGPFitter():
         self.decoupled_evals = decoupled_evals
 
         self.type_lengthscale = type_lengthscale
-
-        self.fit_only_fidelity_0 = fit_only_fidelity_0
 
 
     def initialize_mfdgp(self, x_train, y_train, fidelities, blackbox_name, threshold_constraint=0.0, is_constraint=False, previously_trained_model = None):
@@ -168,27 +165,19 @@ class BlackBoxMFDGPFitter():
         self.models_uncond_trained = True
 
       
-    def sample_and_store_pareto_solution(self, fix_eval_fidelity_0=False):
-
-        if self.fit_only_fidelity_0 : assert fix_eval_fidelity_0
+    def sample_and_store_pareto_solution(self):
 
         l_samples_objs = []
 
         for handler_obj in self.mfdgp_handlers_objs.values():
-            if fix_eval_fidelity_0:
-                l_samples_objs.append(handler_obj.mfdgp.sample_function_from_layer_0())
-            else:
-                l_samples_objs.append(handler_obj.mfdgp.sample_function_from_each_layer()[ -1 ])
+            l_samples_objs.append(handler_obj.mfdgp.sample_function_from_each_layer()[ -1 ])
 
 
-        for _ in range(MFDGPHandler.MAX_TRIES_FOR_FEASIBLE_GRID): # DFS: Is this right? Sometimes there are no feasible points
+        for _ in range(MFDGPHandler.MAX_TRIES_FOR_FEASIBLE_GRID): # DFS: Is this right? Sometimes there are no feasible point so
             l_samples_cons = []
             
             for handler_con in self.mfdgp_handlers_cons.values():
-                if fix_eval_fidelity_0:
-                    l_samples_cons.append(handler_obj.mfdgp.sample_function_from_layer_0())
-                else:
-                    l_samples_cons.append(handler_con.mfdgp.sample_function_from_each_layer()[ -1 ])
+                l_samples_cons.append(handler_con.mfdgp.sample_function_from_each_layer()[ -1 ])
 
             inputs = self.x_train
 
@@ -196,13 +185,12 @@ class BlackBoxMFDGPFitter():
                                     l_samples_cons,
                                     input_dim=inputs.shape[ 1 ],
                                     grid_size=self.opt_grid_size * inputs.shape[ 1 ],
-                                    pareto_set_size=self.pareto_set_size,
-                                    feasible_values = -1.0 * self.thresholds_cons.numpy())
+                                    pareto_set_size=self.pareto_set_size, feasible_values = -1.0 * self.thresholds_cons.numpy())
 
             # self.pareto_set, self.pareto_front = global_optimizer.compute_pareto_solution_from_samples(inputs)
 
-            # print("inputs:\n", inputs.shape, "\n", inputs)
-            
+            # return self.pareto_set, self.pareto_front
+
             if (res := global_optimizer.compute_pareto_solution_from_samples(inputs)) is not None:
                 self.pareto_set, self.pareto_front, self.samples_objs, self.samples_cons = res
                 return self.pareto_set, self.pareto_front, self.samples_objs, self.samples_cons
@@ -305,19 +293,11 @@ class BlackBoxMFDGPFitter():
             for i, handler_objs in enumerate(handlers_objs):
 
                 with gpytorch.settings.num_likelihood_samples(1):
-                    output = handler_objs.mfdgp(x_tilde)[ handler_objs.num_fidelities - 1 ] # DFS: Por alguna razon la capa 0 tiene shape (1, num_inputs) y la 1 (num_inputs) # Ver como se crean las MultivariateNormal que se usan aqui
-                    
+                    output = handler_objs.mfdgp(x_tilde)[ handler_objs.num_fidelities - 1 ]
+
                     mean_f_x_tilde, var_f_x_tilde = output.mean, output.variance
-
-                    # Fix shape of the mean if we are using the layer 0
-                    if self.fit_only_fidelity_0: # DFS: Como la capa 0 tiene una dimension extra aqui se la quitamos para que no de error
-                        mean_f_x_tilde = mean_f_x_tilde[ 0 ]
-                        var_f_x_tilde = var_f_x_tilde[ 0 ]
-
                     means_f_x_tilde = torch.cat((means_f_x_tilde, mean_f_x_tilde[None, :]), 0)
                     vars_f_x_tilde = torch.cat((vars_f_x_tilde, var_f_x_tilde[None, :]), 0)
-
-                    print("mean_f_x_tilde:", mean_f_x_tilde.shape, "\n", mean_f_x_tilde)
 
             for i, handler_cons in enumerate(handlers_cons):
 
@@ -325,12 +305,6 @@ class BlackBoxMFDGPFitter():
                     output = handler_cons.mfdgp(x_tilde)[ handler_cons.num_fidelities - 1 ] # We pass the data through the DGP to obtain the predictions
 
                     mean_c_x_tilde, var_c_x_tilde = output.mean, output.variance
-
-                    # Fix shape of the mean if we are using the layer 0
-                    if self.fit_only_fidelity_0: # DFS: Como la capa 0 tiene una dimension extra aqui se la quitamos para que no de error
-                        mean_c_x_tilde = mean_c_x_tilde[ 0 ]
-                        var_c_x_tilde = var_c_x_tilde[ 0 ]
-
                     means_c_x_tilde = torch.cat((means_c_x_tilde, mean_c_x_tilde[None, :]), 0)
                     vars_c_x_tilde = torch.cat((vars_c_x_tilde, var_c_x_tilde[None, :]), 0)
 
