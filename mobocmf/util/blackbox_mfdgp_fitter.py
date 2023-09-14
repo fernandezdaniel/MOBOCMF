@@ -128,7 +128,9 @@ class BlackBoxMFDGPFitter():
                 
                 loss_iter, kl_iter = func_update_model(handler_obj.mfdgp, handler_obj.elbo, optimizer, handler_obj.train_loader)
 
-                print("[OBJ: ", n_obj, "] Epoch:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), "\t KL per epoch:", kl_iter.item())
+                if i == 0: print("[OBJ: ", n_obj, "] Epoch:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), "\t KL per epoch:", kl_iter.item())
+            
+            print("[OBJ: ", n_obj, "] Epoch:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), "\t KL per epoch:", kl_iter.item())
             
         for (handler_con, optimizer, n_con) in zip(self.mfdgp_handlers_cons.values(), l_opt_cons, np.arange(len(self.mfdgp_handlers_cons))):
 
@@ -136,7 +138,9 @@ class BlackBoxMFDGPFitter():
                 
                 loss_iter, kl_iter = func_update_model(handler_con.mfdgp, handler_con.elbo, optimizer, handler_con.train_loader)
 
-                print("[CON: ", n_con, "] Epoch:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), "\t KL per epoch:", kl_iter.item())
+                if i == 0: print("[CON: ", n_con, "] Epoch:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), "\t KL per epoch:", kl_iter.item())
+
+            print("[CON: ", n_con, "] Epoch:", i, "/", num_epochs, ". Avg. Neg. ELBO per epoch:", loss_iter.item(), "\t KL per epoch:", kl_iter.item())
 
     def train_mfdgps(self):
 
@@ -185,7 +189,8 @@ class BlackBoxMFDGPFitter():
                                     l_samples_cons,
                                     input_dim=inputs.shape[ 1 ],
                                     grid_size=self.opt_grid_size * inputs.shape[ 1 ],
-                                    pareto_set_size=self.pareto_set_size, feasible_values = -1.0 * self.thresholds_cons.numpy())
+                                    pareto_set_size=self.pareto_set_size,
+                                    feasible_values = -1.0 * self.thresholds_cons.numpy())
 
             # self.pareto_set, self.pareto_front = global_optimizer.compute_pareto_solution_from_samples(inputs)
 
@@ -221,7 +226,7 @@ class BlackBoxMFDGPFitter():
 
         for handler_obj in self.mfdgp_handlers_objs.values():
             
-            handler_obj.mfdgp.fix_variational_hypers_cond(fix_variational_hypers)
+            handler_obj.mfdgp.fix_variational_hypers_cond(fix_variational_hypers) # XXX pdb
             params = params + list(handler_obj.mfdgp.parameters())
 
         for handler_con in self.mfdgp_handlers_cons.values():
@@ -345,7 +350,7 @@ class BlackBoxMFDGPFitter():
 
         self.mfdgps_to_train_mode()
 
-        self_copy = deepcopy(self)
+        self_copy = deepcopy(self) # XXX pdb
 
         return self_copy
     
