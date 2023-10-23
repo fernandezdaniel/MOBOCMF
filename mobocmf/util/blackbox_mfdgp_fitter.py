@@ -15,8 +15,10 @@ from copy import deepcopy
 
 dist = torch.distributions.normal.Normal(0, 1) 
 
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+# import matplotlib.pyplot as plt
+# import matplotlib.gridspec as gridspec
+
+ITER_PRINT = 1000
 
 class MFDGPHandler():
 
@@ -169,7 +171,7 @@ class BlackBoxMFDGPFitter():
         self.models_uncond_trained = True
 
       
-    def sample_and_store_pareto_solution(self):
+    def _sample_and_store_pareto_solution(self):
 
         l_samples_objs = []
 
@@ -201,6 +203,13 @@ class BlackBoxMFDGPFitter():
                 return self.pareto_set, self.pareto_front, self.samples_objs, self.samples_cons
 
         raise NotFeasiblePoints("[ERROR] No feasible points were found in the constraint space! # tries: %d." % MFDGPHandler.MAX_TRIES_FOR_FEASIBLE_GRID)
+
+    def sample_and_store_pareto_solution(self):
+        while True:
+            try:
+                return self._sample_and_store_pareto_solution()
+            except NotFeasiblePoints:
+                print ("Not feasible solution found, trying another time!")
 
     def loss_theta_factors(self, cs_mean, cs_var, threshold):
 
@@ -240,7 +249,9 @@ class BlackBoxMFDGPFitter():
 
             loss_iter = func_update_model(self.mfdgp_handlers_objs.values(), self.mfdgp_handlers_cons.values(), optimizer)
 
-            print("Iter:", i, "/", num_iters, ". Neg. ELBO per iter:", loss_iter.item())
+            if (i % ITER_PRINT) == 0 or (( i + 1) == num_iters):
+                print("Iter:", i, "/", num_iters, ". Neg. ELBO per iter:", loss_iter.item())
+        
 
     def train_conditioned_mfdgps(self):
 

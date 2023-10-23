@@ -14,7 +14,7 @@ from botorch.utils import t_batch_mode_transform
 from mobocmf.util.blackbox_mfdgp_fitter import BlackBoxMFDGPFitter
 from mobocmf.models.mfdgp import MFDGP
 
-from botorch.optim.optimize import optimize_acqf
+from botorch.optim.optimize import optimize_acqf # XXX delete choser part
 
 class _JES_MFDGP(AnalyticAcquisitionFunction):
     def __init__(
@@ -49,7 +49,7 @@ class _JES_MFDGP(AnalyticAcquisitionFunction):
             pred_means_cond, pred_variances_cond = self.mfdgp_cond.predict_for_acquisition(X, self.fidelity)
         self.mfdgp_cond.train()
 
-#        return 0.5 * torch.clamp(torch.log(pred_variances_uncond) - torch.log(pred_variances_cond), min=0.0) 
+        # return 0.5 * torch.clamp(torch.log(pred_variances_uncond) - torch.log(pred_variances_cond), min=0.0) 
         return torch.clamp(pred_variances_uncond - pred_variances_cond, min=0.0)
         
 
@@ -78,9 +78,9 @@ class JESMOC_MFDGP():
 
             self.blackbox_mfdgp_fitter_cond = model
         else:
-            self.pareto_set = model_cond.pareto_set
-            self.pareto_front = model_cond.pareto_front
-            self.samples_objs = model_cond.samples_objs
+            self.pareto_set = model_cond.pareto_set     # XXX next test, delete this line
+            self.pareto_front = model_cond.pareto_front # XXX next test, delete this line
+            self.samples_objs = model_cond.samples_objs # XXX next test, delete this line
 
             self.blackbox_mfdgp_fitter_cond = model_cond
 
@@ -96,6 +96,7 @@ class JESMOC_MFDGP():
             self.costs_blackboxes[ n_f ] = {}            
             self.costs_blackboxes[ n_f ][ "total" ] = 0.0
 
+    # def add_blackbox(self, fidelity: int, blackbox_name: str, is_constraint=False):
     def add_blackbox(self, fidelity: int, blackbox_name: str, cost_evaluation: float = 1.0, is_constraint=False):
             
         mfdgp_uncond = self.blackbox_mfdgp_fitter_uncond.get_model(blackbox_name, is_constraint=is_constraint )
@@ -116,23 +117,23 @@ class JESMOC_MFDGP():
     def decoupled_acq(self, X: Tensor, fidelity: int, blackbox_name: str, is_constraint=True) -> Tensor:
 
         if is_constraint:
-            return self.constraints[ fidelity ][ blackbox_name ](X.double()) / self.costs_blackboxes[ fidelity ][ blackbox_name ]
+            return self.constraints[ fidelity ][ blackbox_name ](X.double()) # / self.costs_blackboxes[ fidelity ][ blackbox_name ]
         else:
-            return self.objectives[ fidelity ][ blackbox_name ](X.double()) / self.costs_blackboxes[ fidelity ][ blackbox_name ]
+            return self.objectives[ fidelity ][ blackbox_name ](X.double()) # / self.costs_blackboxes[ fidelity ][ blackbox_name ]
     
     def coupled_acq(self, X: Tensor, fidelity: int) -> Tensor:
 
         acq = torch.zeros(size=(X.shape[ 0 ],))
 
         for name_obj, obj in self.objectives[ fidelity ].items():
-            acq += obj(X.double()) / self.costs_blackboxes[ fidelity ][ name_obj ]
+            acq += obj(X.double()) # / self.costs_blackboxes[ fidelity ][ name_obj ]
 
         for name_con, con in self.constraints[ fidelity ].items():
-            acq += con(X.double()) / self.costs_blackboxes[ fidelity ][ name_con ]
+            acq += con(X.double()) # / self.costs_blackboxes[ fidelity ][ name_con ]
 
         return acq
 
-    def _get_nextpoint_coupled_highest_fidelity(self, iteration=None, verbose=False) -> Tensor:
+    def _get_nextpoint_coupled_highest_fidelity(self, iteration=None, verbose=False) -> Tensor:  # XXX delete choser part
 
         if verbose: assert (iteration is not None)
 

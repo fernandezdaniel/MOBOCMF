@@ -20,9 +20,10 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
     def __init__(self, x_train, y_train, fidelities, num_fidelities,
                  type_lengthscale=TL.MEDIAN, num_samples_for_acquisition=25,
                  previously_trained_model=None, use_only_highest_fidelity=False,
-                 ini_inducing_using_layer_0=True):
+                 ini_inducing_using_layer_0=True, test_params=False):
 
         hidden_layers = []
+        self.test_params = test_params
 
         self._eval_mode = False
         self.num_samples_for_acquisition = num_samples_for_acquisition
@@ -56,7 +57,8 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
                                               init_lengthscale=init_lengthscale,
                                               num_fidelities=num_fidelities,
                                               num_samples_for_acquisition=num_samples_for_acquisition, 
-                                              previously_trained_layer = previously_trained_layer))
+                                              previously_trained_layer=previously_trained_layer,
+                                              test_params=self.test_params))
 
         for i in range(1, num_fidelities):
 
@@ -97,7 +99,8 @@ class MFDGP(DeepGP): # modos entrenar() y eval()
                                                   init_lengthscale=init_lengthscale,
                                                   y_high_std=y_high_std,
                                                   num_samples_for_acquisition=num_samples_for_acquisition,
-                                                  previously_trained_layer = previously_trained_layer))
+                                                  previously_trained_layer=previously_trained_layer,
+                                                  test_params=self.test_params))
 
         super().__init__()
 

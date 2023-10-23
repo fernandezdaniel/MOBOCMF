@@ -23,7 +23,13 @@ class MFDGPHiddenLayer(DeepGPLayer):
 
     # input_dims is the dimensionality of the attribute vector x that is put into the layer 
 
-    def __init__(self, num_layer, input_dims, inducing_points, inducing_values, num_fidelities, init_lengthscale, y_high_std=1.0, num_samples_for_acquisition=25, previously_trained_layer = None):
+    def __init__(self, num_layer, input_dims, inducing_points,
+                 inducing_values, num_fidelities, init_lengthscale,
+                 y_high_std=1.0, num_samples_for_acquisition=25,
+                 previously_trained_layer=None, test_params=False):
+        
+        self.test_params = test_params
+
         self.num_layer = num_layer
         self.input_dims = input_dims
         num_inducing = inducing_points.shape[ 0 ]
@@ -42,6 +48,19 @@ class MFDGPHiddenLayer(DeepGPLayer):
 
             self.sample_from_posterior = self._sample_from_posterior_layer0
             self.sample_from_prior = self._sample_from_prior_layer0
+
+            if self.test_params:
+                ###########################################################################################
+                # XXX INI test params
+                l0_lengthscale = 0.25 * input_dims
+                l0_alpha  = 1.0
+
+                covar_module.base_kernel.initialize(lengthscale=l0_lengthscale)
+                covar_module.initialize(outputscale=l0_alpha)
+
+                # XXX END test params
+                ###########################################################################################
+
         else:
 
             # We use the fact that the output dim of a layer is always 1 in this model
@@ -62,11 +81,37 @@ class MFDGPHiddenLayer(DeepGPLayer):
             k_x_1.base_kernel.initialize(lengthscale=init_lengthscale * 10.0)  # DHL we set this to be initially very smooth to favor dependencies across all inputs
             k_f.base_kernel.initialize(lengthscale=1.0)  # The targets are assumed to be standardized more or less.
             k_x_2.base_kernel.initialize(lengthscale=init_lengthscale)
-            k_lin.initialize(variance = torch.ones(1))
+            k_lin.initialize(variance=torch.ones(1))
 
-            k_x_1.initialize(outputscale = 1.0)
-            k_f.initialize(outputscale = 1.0)
-            k_x_2.initialize(outputscale = 0.01) # This is set to be small initially to favor strong dependencies
+            k_x_1.initialize(outputscale=1.0)
+            k_f.initialize(outputscale=1.0)
+            k_x_2.initialize(outputscale=0.01) # This is set to be small initially to favor strong dependencies
+
+            if self.test_params:
+                ###########################################################################################
+                # XXX INI test params
+                lengthscale_x1 = 10 * 0.25 * input_dims # DHL podría ser interesante hacer este lengthscale más grande para dependencias más suaves.
+                lengthscale_f  = 1.0
+                lengthscale_x2 = 0.25 * input_dims
+
+                alpha_x1  = 1.0
+                alpha_f   = 1.0
+                # alpha_x1f = alpha_x1 * alpha_f
+                alpha_x2  = 0.01
+
+                nu_lin    = 1.0
+
+                k_x_1.base_kernel.initialize(lengthscale=lengthscale_x1) # DHL we set this to be initially very smooth to favor dependencies across all inputs
+                k_f.base_kernel.initialize(lengthscale=lengthscale_f) # The targets are assumed to be standardized more or less.
+                k_x_2.base_kernel.initialize(lengthscale=lengthscale_x2)
+                k_lin.initialize(variance=torch.ones(1) * nu_lin)
+
+                k_x_1.initialize(outputscale=alpha_x1)
+                k_f.initialize(outputscale=alpha_f)
+                k_x_2.initialize(outputscale=alpha_x2) # This is set to be small initially to favor strong dependencies
+
+                # XXX END test params
+                ###########################################################################################
 
             covar_module = k_x_1 * (k_lin + k_f) + k_x_2
 
@@ -114,7 +159,7 @@ class MFDGPHiddenLayer(DeepGPLayer):
 #            else:
 #                init_dist = MultivariateNormal(inducing_values, torch.eye(num_inducing) * 1e-8)
 
-        if num_layer == num_fidelities - 1: # DFS: Should we change this condition to: if num_layer == num_fidelities - 1:
+        if num_layer == num_fidelities - 1:
             init_dist = MultivariateNormal(inducing_values, covar_module(inducing_points) * (1e-2 * y_high_std**2)**2)
         else:
             init_dist = MultivariateNormal(inducing_values, torch.eye(num_inducing) * 1e-8)
@@ -140,6 +185,65 @@ class MFDGPHiddenLayer(DeepGPLayer):
 
         self.num_samples_for_acquisition = num_samples_for_acquisition
         self._eval_mode = False
+
+        ###########################################################################################
+        # XXX INI test params FIX GRADIENTS
+        if num_layer == 0 and self.test_params:
+            # LAYER 0 #####################################
+
+            self.covar_module.base_kernel.raw_lengthscale.requires_grad = False
+            self.covar_module.raw_outputscale.requires_grad = False
+
+        if num_layer > 0 and self.test_params:
+            # LAYER 1 #####################################
+            
+            self.covar_module.kernels[ 0 ].kernels[ 0 ].base_kernel.raw_lengthscale.requires_grad = False
+            self.covar_module.kernels[ 0 ].kernels[ 1 ].kernels[ 1 ].base_kernel.raw_lengthscale.requires_grad = False
+            self.covar_module.kernels[ 1 ].base_kernel.raw_lengthscale.requires_grad = False
+
+            self.covar_module.kernels[ 0 ].kernels[ 0 ].raw_outputscale.requires_grad = False
+            self.covar_module.kernels[ 0 ].kernels[ 1 ].kernels[ 1 ].raw_outputscale.requires_grad = False
+            self.covar_module.kernels[ 1 ].raw_outputscale.requires_grad = False
+
+            self.covar_module.kernels[ 0 ].kernels[ 1 ].kernels[ 0 ].raw_variance.requires_grad = False
+
+        # XXX END test params FIX GRADIENTS
+        ###########################################################################################
+
+    def print_lengthscales_and_outputscale(self, custom_print):
+        
+        if self.num_layer == 0:
+
+            l0_lengthscale = self.covar_module.base_kernel.lengthscale.detach().numpy().flatten()
+            l0_outputscale  = self.covar_module.outputscale.detach().numpy().item()
+
+            d_vals = {"l0_lengthscale:": l0_lengthscale,
+                      "l0_outputscale:": l0_outputscale}
+            
+            custom_print(d_vals)
+
+        else:
+            lengthscale_x1 = self.covar_module.kernels[ 0 ].kernels[ 0 ].base_kernel.lengthscale.detach().numpy().flatten()
+            lengthscale_f  = self.covar_module.kernels[ 0 ].kernels[ 1 ].kernels[ 1 ].base_kernel.lengthscale.detach().numpy().flatten()
+            lengthscale_x2 = self.covar_module.kernels[ 1 ].base_kernel.lengthscale.detach().numpy().flatten()
+
+            alpha_x1  = self.covar_module.kernels[ 0 ].kernels[ 0 ].outputscale.detach().numpy().item()
+            alpha_f   = self.covar_module.kernels[ 0 ].kernels[ 1 ].kernels[ 1 ].outputscale.detach().numpy().item()
+            alpha_x1f = alpha_x1 * alpha_f
+            alpha_x2  = self.covar_module.kernels[ 1 ].outputscale.detach().numpy().item()
+
+            nu_lin    = self.covar_module.kernels[ 0 ].kernels[ 1 ].kernels[ 0 ].variance.detach().numpy().item()
+
+            d_vals = {"l1_lengthscale_x1:": lengthscale_x1,
+                    "l1_lengthscale_f:": lengthscale_f, 
+                    "l1_lengthscale_x2:": lengthscale_x2, 
+                    "l1_alpha_x1:": alpha_x1, 
+                    "l1_alpha_f:": alpha_f, 
+                    "l1_alpha_x1f:": alpha_x1f, 
+                    "l1_alpha_x2:": alpha_x2, 
+                    "l1_nu_lin:": nu_lin}
+            
+            custom_print(d_vals)
 
     def train_mode(self):
         self._eval_mode = False

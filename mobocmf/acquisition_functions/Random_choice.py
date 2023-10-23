@@ -44,7 +44,9 @@ class Random_choice():
     def get_nextpoint_coupled(self, iteration=None, verbose=False) -> Tensor:
 
         fidelities = torch.arange(self.num_fidelities)
-        probs_fidelities = self.coupled_costs_fidelities / self.total_cost_fidelities
+        
+        # The probability of choosing a specific fidelity is one minus the normalized cost
+        probs_fidelities = 1.0 - ( self.coupled_costs_fidelities / self.total_cost_fidelities )
 
         nextpoint = torch.rand(size=(self.input_size, ))
         fidelity_to_evaluate = fidelities[ torch.multinomial(probs_fidelities, 1).item() ].item()
