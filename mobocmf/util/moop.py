@@ -35,25 +35,40 @@ class MOOP():
     def _dist_cdist(self, x1, x2):
         return cdist(x1, x2)
 
-    def find_feasible_grid(self, constraints, grid, feasible_values=0.0):
+    def find_feasible_grid(self, constraints, grid, feasible_values=0.0, allow_negative_constraints = False):
 
         if not isinstance(feasible_values, np.ndarray):
             feasible_values = np.ones(self.input_dim) * feasible_values
 
         # We obtain the feasible locations of the first constraint
 
-        feasible_region = constraints[ 0 ](grid) >= feasible_values[ 0 ] 
+        feasible_region = constraints[ 0 ](grid) >= feasible_values[ 0 ]
 
         # We compute the feasible mask of the rest of the constraints and combine all the results
 
         for i, con_fun in enumerate(constraints[ 1 : ]):
             feasible_region = np.logical_and(feasible_region, con_fun(grid) >= feasible_values[ i + 1 ])
 
+        # If there are not feasible points but we allow negative constraints we return
+        # the point closer to satify the constraints
+
+        if not np.any(feasible_region) and allow_negative_constraints == True:
+
+            const_values = constraints[ 0 ](grid) - feasible_values[ 0 ]
+            const_values[ const_values >= 0 ] = 0
+
+            for i, con_fun in enumerate(constraints[ 1 : ]):
+                const_values_new = con_fun(grid) - feasible_values[ i + 1 ]
+                const_values_new[ const_values_new >= 0 ] = 0
+                const_values += const_values_new
+
+            return grid[ const_values == np.max(const_values[ const_values != 0 ]), : ]
+
         if not np.any(feasible_region):
             return None
-        
+
         return grid[ feasible_region, : ]
-    
+
     def optimize_obj_globally(self, obj, cons, obj_evals, feasible_grid, constraint_tol=1e-6):
 
         assert self.input_dim == feasible_grid.shape[ 1 ]
@@ -96,7 +111,7 @@ class MOOP():
 
         if f(opt_x) < best_guess_value and np.all(g(opt_x) >= 0):
             return opt_x[ None ]
-        
+
         # logging.debug('SLSQP failed when optimizing x*')
 
         # We try to solve the problem again but more carefully (we substract "constraint_tol" to the constraints)
@@ -119,10 +134,10 @@ class MOOP():
 
         if f(opt_x) < best_guess_value and np.all(g(opt_x) >= -constraint_tol):
             return opt_x[ None ]
-        
+
         # logging.debug('SLSQP failed two times when optimizing x*')
         return None
-    
+
     @classmethod
     def compute_pareto_front(cls, pts): # Corresponds to _cull_algorithm() function of Spearmint
 
@@ -133,7 +148,7 @@ class MOOP():
 
         while i_pt < pts.shape[ 0 ]:
             old_i_pt = indices_pareto_pts[ i_pt ]
-            
+
             # We obtain which points are dominated by the current point
 
             mask_new_pareto = np.any(pts < pts[ i_pt ], axis=1)
@@ -147,7 +162,7 @@ class MOOP():
             # We update the index taking into account the contraction of 'pts'
 
             i_pt = np.searchsorted(indices_pareto_pts, old_i_pt, side="right")
-                
+
         mask_pareto_front = np.zeros(n_points, dtype = bool)
         mask_pareto_front[ indices_pareto_pts ] = True
         return mask_pareto_front
@@ -160,17 +175,17 @@ class MOOP():
         pts = pts[ ixs ]
 
         # We obtain the indices of the pareto front given the set 'pts'
-        
+
         mask_pareto_front = MOOP.compute_pareto_front(pts)
-        
+
         # We undo the sorting to return the mask in the same order in which 'pts' was given
-        
+
         mask_pareto_front[ ixs ] = mask_pareto_front.copy()
-        
+
         return mask_pareto_front
 
     def compute_pareto_front_and_set_summary_y_space(self, pareto_set, pareto_front, pareto_set_size):
-        
+
         assert pareto_set_size > 0
 
         if pareto_set.shape[ 0 ] <= pareto_set_size:
@@ -203,12 +218,13 @@ class MOOP():
 
         return pareto_set[ subset, : ], pareto_front[ subset, : ]
 
-    def compute_pareto_solution_from_samples(self, inputs):
+    def compute_pareto_solution_from_samples(self, inputs, allow_negative_constraints = False):
         """
         First, we create a grid of candidate points for the pareto set.
         Second, we add the optimum of the objectives to that grid.
         Third, we run the algorithm to obtain the pareto set on the grid.
         Finally, we summarize the pareto solution if requested and return it.
+        # allow_negative_constraints is used to return the less feasible points
         """
 
         # Uniform grid with the candidate points for the pareto set
@@ -218,23 +234,16 @@ class MOOP():
 
         # We remove all the infeasible locations of the grid (this speeds up the optimization process)
 
-        if (grid := self.find_feasible_grid(self.samples_cons, grid, feasible_values=self.feasible_values)) is None: # XXX DFS: We use Walrus Operator, python version must be >= 3.8
+        if (grid := self.find_feasible_grid(self.samples_cons, grid, feasible_values=self.feasible_values, \
+            allow_negative_constraints = allow_negative_constraints)) is None: # XXX DFS: We use Walrus Operator, python version must be >= 3.8
             return None
 
-        # # We remove the duplicates of the grid
-        
-        # kdtree = KDTree(grid)
-        # ixs_nearby_point_pairs = kdtree.query_pairs(self.min_distance_between_points, output_type='ndarray')
-        # if ixs_nearby_point_pairs.shape[ 0 ]:
-        #     ixs_duplicates = ixs_nearby_point_pairs[ : , 0 ] # We keep only one of the points from each pair of nearby points
-        #     np.delete(grid, ixs_duplicates, 0)
-
-        # We initialize an array of values of the objectives in the grid and 
+        # We initialize an array of values of the objectives in the grid and
         # a new array with the location of the optimums of the objectives
 
         grid_evals = np.empty(shape=(grid.shape[ 0 ], len(self.samples_objs)))
         opt_objs_x = np.array([], dtype=grid.dtype).reshape(0, self.input_dim)
-        
+
         # We get the input of the optimum of each objective
 
         for i, obj in enumerate(self.samples_objs):
@@ -273,6 +282,5 @@ class MOOP():
 
         if self.pareto_set_size is not None:
             pareto_set, pareto_front = self.compute_pareto_front_and_set_summary_y_space(pareto_set, pareto_front, self.pareto_set_size)
-        
+
         return torch.from_numpy(pareto_set), torch.from_numpy(pareto_front), self.samples_objs, self.samples_cons
-        

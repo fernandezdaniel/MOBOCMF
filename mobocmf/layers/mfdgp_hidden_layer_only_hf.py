@@ -6,7 +6,7 @@ import gpytorch
 from typing import Optional
 from gpytorch.means import ConstantMean, LinearMean, ZeroMean
 from gpytorch.kernels import RBFKernel, LinearKernel, ScaleKernel
-from gpytorch.variational import UnwhitenedVariationalStrategy, CholeskyVariationalDistribution, NaturalVariationalDistribution
+from gpytorch.variational import UnwhitenedVariationalStrategy, CholeskyVariationalDistribution
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.models.deep_gps import DeepGPLayer
 from gpytorch.lazy import LazyEvaluatedKernelTensor
@@ -18,6 +18,7 @@ class CovarianceMatrixMF(LazyEvaluatedKernelTensor):
 
     def add_jitter(self, jitter_val = 2e-6):
         return super(LazyEvaluatedKernelTensor, self).add_jitter(jitter_val)
+
 
 class MFDGPHiddenLayer(DeepGPLayer):
 
@@ -81,11 +82,11 @@ class MFDGPHiddenLayer(DeepGPLayer):
             k_x_1.base_kernel.initialize(lengthscale=init_lengthscale * 10.0)  # DHL we set this to be initially very smooth to favor dependencies across all inputs
             k_f.base_kernel.initialize(lengthscale=1.0)  # The targets are assumed to be standardized more or less.
             k_x_2.base_kernel.initialize(lengthscale=init_lengthscale)
-            k_lin.initialize(variance=torch.ones(1))
+            k_lin.initialize(variance=torch.ones(1) * 0.0)
 
-            k_x_1.initialize(outputscale=1.0)
-            k_f.initialize(outputscale=1.0)
-            k_x_2.initialize(outputscale=0.01) # This is set to be small initially to favor strong dependencies
+            k_x_1.initialize(outputscale=0.0)
+            k_f.initialize(outputscale=0.0)
+            k_x_2.initialize(outputscale=1.0) # This is set to be small initially to favor strong dependencies
 
             if self.init_params_to_prior_and_fix_them:
                 ###########################################################################################
@@ -187,6 +188,15 @@ class MFDGPHiddenLayer(DeepGPLayer):
         # XXX END test params FIX GRADIENTS
         ###########################################################################################
 
+        # We keep only the linear term of the covairance function
+
+        if num_layer > 0:
+
+            k_x_1.base_kernel.raw_lengthscale.requires_grad = False
+            k_x_1.raw_outputscale.requires_grad = False
+            k_f.base_kernel.raw_lengthscale.requires_grad = False
+            k_f.raw_outputscale.requires_grad = False
+            k_lin.raw_variance.requires_grad = False
 
     def print_lengthscales_and_outputscale(self, custom_print):
 
@@ -242,7 +252,7 @@ class MFDGPHiddenLayer(DeepGPLayer):
 
         return MultivariateNormal(mean_x, covar_x)
 
-    def __call__(self, x, *other_inputs, **kwargs):
+    def __call__(self, x, *other_inputs, **kwargs): 
 
         # This adds extra inputs, if given
 
@@ -272,6 +282,7 @@ class MFDGPHiddenLayer(DeepGPLayer):
                     else:
                         #inp = inp.rsample().T
                         inp = (torch.normal(torch.zeros(inp.mean.shape)) * torch.sqrt(inp.variance) + inp.mean).T
+                        #inp = inp.mean.T # XXX DHL cambiar
 
                 else:
 
@@ -447,7 +458,7 @@ class MFDGPHiddenLayer(DeepGPLayer):
 
         assert sample_from_prior_last_layer is not None
 
-        lengthscale_x1 = 10 * 0.25 * input_dim 
+        lengthscale_x1 = 10 * 0.25 * input_dim # DHL podría ser interesante hacer este lengthscale más grande para dependencias más suaves.
         lengthscale_f  = 1.0
         lengthscale_x2 = 0.25 * input_dim
 

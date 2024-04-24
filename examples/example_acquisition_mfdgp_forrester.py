@@ -27,6 +27,9 @@ num_fidelities = 2
 num_inputs_high_fidelity = 4
 num_inputs_low_fidelity = 12
 
+COST_LOWER_FIDELITY  = 1.0
+COST_HIGHER_FIDELITY = 10.0
+
 num_epochs_1 = 5000
 num_epochs_2 = 15000
 batch_size = num_inputs_low_fidelity + num_inputs_high_fidelity # DFS: Cambiar para ver que pasa cuando el batch no es del numero de datos
@@ -122,28 +125,34 @@ blackbox_mfdgp_fitter.num_epochs_1 = num_epochs_1
 blackbox_mfdgp_fitter.num_epochs_2 = num_epochs_2
 
 jesmoc_mfdgp = JESMOC_MFDGP(model=blackbox_mfdgp_fitter, num_fidelities=num_fidelities)
-jesmoc_mfdgp.add_blackbox(obj1_mean_mf0, obj1_std_mf0, 0, "obj1", is_constraint=False)
-jesmoc_mfdgp.add_blackbox(obj1_mean_mf1, obj1_std_mf1, 1, "obj1", is_constraint=False)
+jesmoc_mfdgp.add_blackbox(0, "obj1", cost_evaluation=COST_LOWER_FIDELITY, is_constraint=False)
+jesmoc_mfdgp.add_blackbox(1, "obj1", cost_evaluation=COST_HIGHER_FIDELITY, is_constraint=False)
 
-jesmoc_mfdgp.add_blackbox(obj1_mean_mf0, obj1_std_mf0, 0, "obj2", is_constraint=False)
-jesmoc_mfdgp.add_blackbox(obj1_mean_mf1, obj1_std_mf1, 1, "obj2", is_constraint=False)
+jesmoc_mfdgp.add_blackbox(0, "obj2", cost_evaluation=COST_LOWER_FIDELITY, is_constraint=False)
+jesmoc_mfdgp.add_blackbox(1, "obj2", cost_evaluation=COST_HIGHER_FIDELITY, is_constraint=False)
 
-jesmoc_mfdgp.add_blackbox(con1_mean_mf0, con1_std_mf0, 0, "con1", is_constraint=True)
-jesmoc_mfdgp.add_blackbox(con1_mean_mf1, con1_std_mf1, 1, "con1", is_constraint=True)
+jesmoc_mfdgp.add_blackbox(0, "con1", cost_evaluation=COST_LOWER_FIDELITY, is_constraint=True)
+jesmoc_mfdgp.add_blackbox(1, "con1", cost_evaluation=COST_HIGHER_FIDELITY, is_constraint=True)
 
 filename = "jesmoc_mfdgp_%dxmf0_%dxmf1_%d_%d" % (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2)
 save_pickle("./jesmoc_mfdgp/", filename, jesmoc_mfdgp)
 jesmoc_mfdgp = read_pickle("./jesmoc_mfdgp/", filename)
 
-def compute_moments_mfdgp(mfdgp, inputs, mean, std, fidelity):
+def compute_moments_mfdgp(mfdgp, inputs, mean, std, fidelity, num_samples=1000):
 
-    with gpytorch.settings.num_likelihood_samples(1):
-        pred_means, pred_variances = mfdgp.predict_for_acquisition(inputs, fidelity)
+    samples = np.zeros((num_samples, inputs.shape[ 0 ]))
 
-    pred_mean = pred_means * std + mean
-    pred_std  = np.sqrt(pred_variances) * std
+    for i in range(num_samples):
+        with gpytorch.settings.num_likelihood_samples(1):
+            with torch.no_grad():
+                pred_means, pred_variances = mfdgp.predict(inputs, fidelity)
+                samples[ i : (i + 1), : ] = np.random.normal(size = pred_means.numpy().shape) * \
+                    np.sqrt(pred_variances.numpy()) + pred_means.numpy()
 
-    return pred_mean.numpy(), pred_std.numpy()
+    pred_mean = np.mean(samples, 0) * std + mean
+    pred_std  = np.std(samples, 0) * std
+
+    return pred_mean, pred_std
 
 def plot_black_box(inputs,
                    figname,
@@ -365,8 +374,8 @@ plot_black_box(spacing,
 def plot_acquisition(spacing, acquisition, blackbox_name, figname):
     _, ax = plt.subplots(1, 1, figsize=(18, 12))
     
-    ax.plot(spacing, acquisition, 'b-', label=blackbox_name)
-    ax.fill_between(spacing, acquisition, acquisition*0.0, color="blue", alpha=0.5)
+    ax.plot(spacing.detach().numpy(), acquisition.detach().numpy(), 'b-', label=blackbox_name)
+    ax.fill_between(spacing.detach().numpy(), acquisition.detach().numpy(), acquisition.detach().numpy()*0.0, color="blue", alpha=0.5)
     plt.title("Acquisition " + blackbox_name)
     plt.legend()
 
@@ -375,7 +384,7 @@ def plot_acquisition(spacing, acquisition, blackbox_name, figname):
     figname = figname.replace("Ninp0", str(len(x_mf0)))
     figname = figname.replace("Ninp1", str(len(x_mf1)))
 
-    path = "~/Descargas/IMG_DGPMF/Ninp0xmf0_Ninp1xmf1/using_predict_for_acq/"
+    path = "./IMG_DGPMF/Ninp0xmf0_Ninp1xmf1/using_predict_for_acq/"
     path = path.replace("Ninp0", str(len(x_mf0)))
     path = path.replace("Ninp1", str(len(x_mf1)))
     

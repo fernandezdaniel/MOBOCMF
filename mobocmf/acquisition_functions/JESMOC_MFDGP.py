@@ -49,8 +49,8 @@ class _JES_MFDGP(AnalyticAcquisitionFunction):
             pred_means_cond, pred_variances_cond = self.mfdgp_cond.predict_for_acquisition(X, self.fidelity)
         self.mfdgp_cond.train()
 
-        # return 0.5 * torch.clamp(torch.log(pred_variances_uncond) - torch.log(pred_variances_cond), min=0.0) 
-        return torch.clamp(pred_variances_uncond - pred_variances_cond, min=0.0)
+        return 0.5 * torch.clamp(torch.log(pred_variances_uncond) - torch.log(pred_variances_cond), min=0.0) 
+        #return torch.clamp(pred_variances_uncond - pred_variances_cond, min=0.0)
         
 
 class JESMOC_MFDGP():
@@ -72,7 +72,7 @@ class JESMOC_MFDGP():
         # We check if we are already given the conditioned models
 
         if (model_cond is None):
-            self.pareto_set, self.pareto_front, self.samples_objs = model.sample_and_store_pareto_solution()
+            self.pareto_set, self.pareto_front, self.samples_objs, self.samples_cons = model.sample_and_store_pareto_solution()
 
             model.train_conditioned_mfdgps()
 
@@ -80,7 +80,8 @@ class JESMOC_MFDGP():
         else:
             self.pareto_set = model_cond.pareto_set     # XXX next test, delete this line
             self.pareto_front = model_cond.pareto_front # XXX next test, delete this line
-            self.samples_objs = model_cond.samples_objs # XXX next test, delete this line
+            # self.samples_objs = model_cond.samples_objs_last_fidelity # XXX next test, delete this line
+            # self.samples_cons = model_cond.samples_cons_last_fidelity # XXX next test, delete this line
 
             self.blackbox_mfdgp_fitter_cond = model_cond
 
@@ -167,7 +168,10 @@ class JESMOC_MFDGP():
                 current_candidate = new_candidate
 
         nextpoint = current_candidate[ 0, : ]
-        if verbose: print("Iter:", iteration, "Acquisition: " + str(current_value_weighted.numpy()) + " Evaluating fidelity", fidelity_to_evaluate, "at", nextpoint.numpy())
+
+        if verbose: 
+            print("Iter:", iteration, "Acquisition: " + str(current_value_weighted.numpy() * \
+                self.costs_blackboxes[ fidelity_to_evaluate ][ "total" ]) + " Evaluating fidelity", fidelity_to_evaluate, "at", nextpoint.numpy())
 
         return nextpoint, fidelity_to_evaluate
 

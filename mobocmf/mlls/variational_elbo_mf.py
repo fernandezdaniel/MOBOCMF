@@ -39,7 +39,13 @@ class VariationalELBOMF(VariationalELBO):
 
         kl_divergence = self.model.variational_strategy.kl_divergence()
 
+        # We add prior contributions
+
+#        log_prior = torch.zeros_like(data_term)
+#        for name, module, prior, closure, _ in self.named_priors():
+#            log_prior.add_(prior.log_prob(closure(module)).sum())
+
         # We return elbo per batch
 
+#        return data_term - kl_divergence * num_batch / self.num_data + log_prior * num_batch / self.num_data, kl_divergence * num_batch / self.num_data
         return data_term - kl_divergence * num_batch / self.num_data, kl_divergence * num_batch / self.num_data
-

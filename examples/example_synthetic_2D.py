@@ -14,7 +14,9 @@ from mobocmf.models.mfdgp import MFDGP
 import sys; assert sys.version_info[1] >= 8
 import dill as pickle
 
-import pdb; pdb.set_trace()
+from mobocmf.util.util import create_path
+
+# import pdb; pdb.set_trace()
 
 np.random.seed(0)
 
@@ -47,8 +49,8 @@ num_fidelities = 2
 num_inputs_high_fidelity = 5
 num_inputs_low_fidelity = 10
 
-num_epochs_1 = 5000
-num_epochs_2 = 15000
+num_epochs_1 = 10
+num_epochs_2 = 20
 batch_size = num_inputs_low_fidelity + num_inputs_high_fidelity
 
 lower_limit = 0.0
@@ -117,10 +119,12 @@ blackbox_mfdgp_fitter.initialize_mfdgp(x_train, con2_y_train, fidelities, "con2"
 ##########################################################################################################
 # Unconditioned training
 
-# blackbox_mfdgp_fitter.train_mfdgps()
+blackbox_mfdgp_fitter.train_mfdgps()
 
-# with open("blackbox_mfdgp_fitters_synthetic_2D/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "wb") as fw:
-#    pickle.dump(blackbox_mfdgp_fitter, fw)
+create_path("blackbox_mfdgp_fitters_synthetic_2D/")
+
+with open("blackbox_mfdgp_fitters_synthetic_2D/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "wb") as fw:
+   pickle.dump(blackbox_mfdgp_fitter, fw)
 
 with open("blackbox_mfdgp_fitters_synthetic_2D/mfdgp_uncond_%dxmf0_%dxmf1_%d_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_1, num_epochs_2), "rb") as fr:
     blackbox_mfdgp_fitter = pickle.load(fr)
@@ -255,17 +259,19 @@ pareto_set, pareto_front, sampled_objectives, sampled_cons = blackbox_mfdgp_fitt
 # blackbox_mfdgp_fitter_cond = deepcopy(blackbox_mfdgp_fitter)
 blackbox_mfdgp_fitter_cond = blackbox_mfdgp_fitter.copy_uncond()
 
-num_epochs_cond = 15000
+num_epochs_cond = 10
 blackbox_mfdgp_fitter_cond.num_epochs_1 = 0
 blackbox_mfdgp_fitter_cond.num_epochs_2 = num_epochs_cond
 
-# blackbox_mfdgp_fitter_cond.train_conditioned_mfdgps() 
+blackbox_mfdgp_fitter_cond.train_conditioned_mfdgps() 
 
-# with open("blackbox_mfdgp_fitters_2D/mfdgp_cond_%dxmf0_%dxmf1_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_cond), "wb") as fw:
-#    pickle.dump(blackbox_mfdgp_fitter_cond, fw)
+create_path("blackbox_mfdgp_fitters_2D/")
 
-# with open("blackbox_mfdgp_fitters_2D/mfdgp_sampled_solution_%dxmf0_%dxmf1_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_cond), "wb") as fw:
-#    pickle.dump((pareto_set, pareto_front, sampled_objectives, sampled_cons), fw)
+with open("blackbox_mfdgp_fitters_2D/mfdgp_cond_%dxmf0_%dxmf1_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_cond), "wb") as fw:
+   pickle.dump(blackbox_mfdgp_fitter_cond, fw)
+
+with open("blackbox_mfdgp_fitters_2D/mfdgp_sampled_solution_%dxmf0_%dxmf1_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_cond), "wb") as fw:
+   pickle.dump((pareto_set, pareto_front, sampled_objectives, sampled_cons), fw)
 
 with open("blackbox_mfdgp_fitters_2D/mfdgp_cond_%dxmf0_%dxmf1_%d.dat"% (num_inputs_low_fidelity, num_inputs_high_fidelity, num_epochs_cond), "rb") as fr:
     blackbox_mfdgp_fitter_cond = pickle.load(fr)
@@ -323,7 +329,7 @@ acq_all_f1  = jesmoc_mfdgp.coupled_acq(spacing, fidelity=1)
 def plot_acquisition(numpy_grid, acquisition, blackbox_name):
 
     fig , ax = plt.subplots(1, 1, figsize=(18, 12))
-    CS = ax.contour(numpy_grid[ 0 : 25 , 0 ], numpy_grid[ 0 : 25 , 0] , acquisition.reshape((25, 25)))
+    CS = ax.contour(numpy_grid[ 0 : 25 , 0 ], numpy_grid[ 0 : 25 , 0] , acquisition.detach().numpy().reshape((25, 25)))
     plt.clabel(CS, inline=1, fontsize=10)
     plt.title("Acquisition " + blackbox_name)
     plt.legend()

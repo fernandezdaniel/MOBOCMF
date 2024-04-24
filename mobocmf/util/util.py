@@ -36,9 +36,10 @@ def compute_dist(x):
 def preprocess_outputs(*args):
 
     # Important: DHL we use the same mean and standar deviation for each fidelity !!!
+    # Important: DHL do not standardize the outputs. Otherwise linear dependencies are broken
 
-    y_mean = np.mean(np.vstack((args)))
-    y_std = np.std(np.vstack((args)))
+    y_mean = 0.0#np.mean(np.vstack((args)))
+    y_std = 1.0#np.std(np.vstack((args)))
 
     y_train = []
     for y_in in args:
@@ -52,9 +53,10 @@ def preprocess_outputs(*args):
 def preprocess_outputs_two_fidelities(y_low, y_high):
 
     # Important: DHL we use the same mean and standar deviation for each fidelity !!!
+    # Important: DHL do not standardize the outputs. Otherwise linear dependencies are broken
 
-    y_mean = np.mean(np.vstack((y_high, y_low)))
-    y_std = np.std(np.vstack((y_high, y_low)))
+    y_mean = 0.0#np.mean(np.vstack((y_high, y_low)))
+    y_std = 1.0#np.std(np.vstack((y_high, y_low)))
 
     y_high = (y_high - y_mean) / y_std
     y_train_high = torch.from_numpy(y_high).double()
