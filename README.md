@@ -1,5 +1,17 @@
-# MFDGP
+# MOBOCMF
 
-To execute the test with a comparison between dgp and mfdgp in a mf problem use: 
-python3 examples/mfdgp_example_forrester.py
+This repository contains the base code for JESMOCMF.
+
+## Example Usage
+
+To see an example, navigate to the folder `example/toy_synthetic_2D_JESMOCMF` folder and run the `toy_synthetic_2D_JESMOCMF.py` file. Use the following commands in your terminal:
+
+```bash
+cd example/toy_synthetic_2D_JESMOCMF
+python toy_synthetic_2D_JESMOCMF.py
+
+
+## Requirements:
+
+- botorch: >= 0.9.0
 

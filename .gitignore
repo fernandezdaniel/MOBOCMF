@@ -26,4 +26,6 @@ experiments/
 *.pdf
 *.txt
 *.zip
+*.sh
+*.out
 
